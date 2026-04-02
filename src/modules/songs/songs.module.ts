@@ -4,7 +4,6 @@ import { R2Module } from '../../infrastructure/r2/r2.module';
 import { SongCatalogService } from './song-catalog.service';
 import { SongFilesService } from './song-files.service';
 import { SongJobsService } from './song-jobs.service';
-import { SongLibraryService } from './song-library.service';
 import { SongStreamService } from './song-stream.service';
 import { SongsService } from './songs.service';
 
@@ -15,7 +14,6 @@ import { SongsService } from './songs.service';
     SongCatalogService,
     SongFilesService,
     SongJobsService,
-    SongLibraryService,
     SongStreamService,
   ],
   exports: [
@@ -23,8 +21,7 @@ import { SongsService } from './songs.service';
     SongCatalogService,
     SongFilesService,
     SongJobsService,
-    SongLibraryService,
     SongStreamService,
   ],
 })
-export class SongsModule {}
+export class SongsModule { }

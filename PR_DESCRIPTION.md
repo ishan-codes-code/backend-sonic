@@ -4,24 +4,26 @@
 
 ## Project Overview
 
-Sonic Backend is a NestJS API for user authentication, song ingestion, library management, and playback URL generation.
+Sonic Backend is a NestJS API for user authentication, song ingestion, library management, playlist management, and playback URL generation.
 
-The application supports two main song access patterns:
+The application supports three main song access patterns:
 
 - Fast playback for songs that already exist in shared storage.
 - Background processing for songs that must be downloaded from YouTube, uploaded to Cloudflare R2, and then exposed through a signed URL.
+- Playlist-based playback and organization.
 
 At a high level, the backend:
 
 - Authenticates users with JWT access and refresh tokens.
-- Stores users, sessions, songs, and library ownership in PostgreSQL via Drizzle ORM.
+- Stores users, sessions, songs, user libraries, and playlists in PostgreSQL via Drizzle ORM.
 - Downloads audio from YouTube with `yt-dlp` and `ffmpeg`.
 - Uploads processed MP3 files to Cloudflare R2.
 - Issues short-lived signed URLs for playback.
+- Manages user-defined playlists with song sequencing.
 
 ## Purpose
 
-The system is designed to avoid duplicate song storage while letting multiple users access a shared song catalog. Each song is stored once globally, and users gain access by adding that song to their personal library.
+The system is designed to avoid duplicate song storage while letting multiple users access a shared song catalog and organize it into personal libraries and playlists. Each song is stored once globally, and users gain access by adding that song to their personal library or playlists.
 
 ## Runtime Architecture
 
@@ -40,7 +42,7 @@ The system is designed to avoid duplicate song storage while letting multiple us
 
 The application consists of two separate processes: an API server and a background worker.
 
-API server startup happens in [src/apps/api/main.ts](/e:/Codes/backends/sonic-backend/src/apps/api/main.ts).
+API server startup happens in [src/apps/api/main.ts](/src/apps/api/main.ts).
 
 - `helmet()` is enabled.
 - CORS is enabled globally.
@@ -48,29 +50,29 @@ API server startup happens in [src/apps/api/main.ts](/e:/Codes/backends/sonic-ba
 - A global `ValidationPipe` strips unknown fields, transforms payloads, and rejects non-whitelisted properties.
 - The app listens on `PORT` or `3000`.
 
-Worker startup happens in [src/apps/worker/main.ts](/e:/Codes/backends/sonic-backend/src/apps/worker/main.ts).
+Worker startup happens in [src/apps/worker/main.ts](/src/apps/worker/main.ts).
 
 - Creates an application context for processing background jobs.
 - Initializes BullMQ worker to handle song processing tasks.
 
 ### Module Layout
 
-The API root composition is defined in [src/apps/api/api.module.ts](/e:/Codes/backends/sonic-backend/src/apps/api/api.module.ts).
+The API root composition is defined in [src/apps/api/api.module.ts](/src/apps/api/api.module.ts).
 
 - `ConfigModule` is global and loads structured config from `src/config/configuration.ts`.
 - `ThrottlerModule` is global with `10` requests per `60` seconds.
 - `DatabaseModule` provides a global Drizzle client.
 - `R2Module` provides R2 storage services.
 - `QueueModule` provides BullMQ queue services.
-- Feature modules are `AuthModule` and `SongsApiModule`.
+- Feature modules are `AuthModule`, `SongsApiModule`, and `PlaylistModule`.
 
-The Worker composition is defined in [src/apps/worker/worker.module.ts](/e:/Codes/backends/sonic-backend/src/apps/worker/worker.module.ts).
+The Worker composition is defined in [src/apps/worker/worker.module.ts](/src/apps/worker/worker.module.ts).
 
 - Includes `DatabaseModule`, `QueueModule`, and `SongProcessorModule` for background processing.
 
 ## Data Model
 
-Schema lives in [schema.ts](/e:/Codes/backends/sonic-backend/src/database/schema.ts).
+Schema lives in [schema.ts](/src/infrastructure/database/schema.ts).
 
 ### Tables
 
@@ -83,16 +85,27 @@ Schema lives in [schema.ts](/e:/Codes/backends/sonic-backend/src/database/schema
 - `songs`
   - Stores global song metadata and the R2 object key.
   - `youtube_id` is unique and additionally indexed.
+  - Includes `channel_name` and `channel_id` for creator attribution.
 - `user_library`
   - Many-to-many mapping between users and songs.
   - Composite uniqueness on `(user_id, song_id)`.
   - Indexed by `user_id` and `song_id`.
+- `playlist`
+  - Stores user-defined playlists.
+  - Includes `name`, `description`, `is_public`, and `thumbnail_url`.
+  - Linked to `users`.
+- `playlist_songs`
+  - Junction table for playlists and songs.
+  - Includes `position` for manual song ordering within a playlist.
+  - Composite uniqueness on `(playlist_id, song_id)`.
 
 ### Important Relationships
 
 - One user can have many sessions.
 - One song can belong to many users through `user_library`.
-- The song catalog is global; ownership is user-specific.
+- One user can have many playlists.
+- One playlist can contain many songs via `playlist_songs`.
+- The song catalog is global; ownership/organization is user-specific.
 
 ## File and Folder Structure
 
@@ -116,9 +129,11 @@ Schema lives in [schema.ts](/e:/Codes/backends/sonic-backend/src/database/schema
   - Signup, login, refresh, logout endpoints.
   - JWT strategy and token issuance logic.
 - `src/modules/songs/`
-  - Global song catalog access.
+  - Global song catalog access and streaming services.
   - Play flow with fast-path or background job fallback.
   - In-memory job tracking for asynchronous song preparation.
+- `src/modules/playlist/`
+  - Playlist management (create, get, add/remove songs).
 - `src/infrastructure/database/`
   - Global Drizzle provider and schema.
 - `src/infrastructure/r2/`
@@ -132,117 +147,42 @@ Schema lives in [schema.ts](/e:/Codes/backends/sonic-backend/src/database/schema
 
 ### Authentication
 
-Auth logic lives in [auth.service.ts](/e:/Codes/backends/sonic-backend/src/auth/auth.service.ts).
+Auth logic lives in `src/modules/auth/auth.service.ts`.
 
-- `signup`
-  - Checks for duplicate email.
-  - Hashes password with `bcrypt`.
-  - Creates the user.
-  - Returns access and refresh tokens.
-- `login`
-  - Validates email and password.
-  - Returns a fresh access and refresh token pair.
-- `refresh`
-  - Verifies refresh token signature.
-  - Loads session by `sessionId` embedded in the token.
-  - Validates expiry and hashed token match.
-  - Deletes the old session and issues a new token pair.
-- `logout`
-  - Decodes the refresh token to find the session.
-  - Deletes the session if it exists.
+- `signup`: Checks for duplicate email, hashes password, creates user, returns tokens.
+- `login`: Validates credentials, returns tokens.
+- `refresh`: Validates refresh token, rotates session and tokens.
+- `logout`: Deletes session associated with the refresh token.
 
 ### JWT Model
 
 - Access tokens use `jwt.accessSecret`.
-- Refresh tokens use `jwt.refreshSecret`.
-- Refresh tokens carry `sessionId`.
-- Session rows store only the hashed refresh token, not the plain token.
+- Refresh tokens use `jwt.refreshSecret` and carry `sessionId`.
+- Session rows store only the hashed refresh token.
 
 ### Song Catalog and Playback
 
-Primary song orchestration lives in [songs.service.ts](/e:/Codes/backends/sonic-backend/src/songs/songs.service.ts).
+Primary song orchestration lives in `src/modules/songs/songs.service.ts`.
 
-### `/songs/play` behavior
+#### `/songs/play` behavior
 
-- Input: YouTube ID and, for new songs, title and duration.
-- If the song already exists in the global catalog:
-  - Try to generate a signed R2 URL.
-  - Return `{ type: "ready", streamUrl }`.
-- If the song does not exist, or the existing file cannot be signed:
-  - Create an in-memory job.
-  - Start processing asynchronously without blocking the request.
-  - Return `{ type: "job", jobId }`.
+- If the song exists and is signable: Returns `{ type: "ready", streamUrl }`.
+- Otherwise: Creates a BullMQ job and returns `{ type: "job", jobId }`.
 
-### Background job model
+#### Background job model
 
-Job state is managed by BullMQ with Redis persistence.
+- Managed by BullMQ with Redis persistence.
+- Job processing includes download via `yt-dlp`, conversion to MP3 via `ffmpeg`, and upload to R2.
 
-- Storage: Redis-backed queue.
-- Status values: active, completed, failed, delayed, waiting.
-- Fields: id, data (songDto), progress, returnvalue (streamUrl), failedReason.
+### Playlist Management
 
-### Job processing sequence
+Playlist logic lives in `src/modules/playlist/playlist.service.ts`.
 
-When a new song needs processing, a job is added to the BullMQ queue.
-
-The background worker processes the job asynchronously:
-
-1. Check again whether the song now exists.
-2. Validate `title` and `duration` if a download is required.
-3. Download and extract audio from YouTube.
-4. Upload the MP3 stream to R2.
-5. Create the global `songs` row.
-6. Generate a signed URL.
-7. Mark the job complete with `streamUrl`.
-
-If any step fails, the job is marked failed.
-
-### Polling endpoint
-
-`GET /songs/job/:jobId` returns:
-
-- `{ status, progress }` while processing
-- `{ status, streamUrl }` when completed
-- `{ status, failedReason }` when failed
-
-### Song Download and Storage
-
-The acquisition pipeline lives in [song-files.service.ts](/e:/Codes/backends/sonic-backend/src/song-files/song-files.service.ts).
-
-- Ensures the downloader binary exists during module init.
-- Uses `yt-dlp-wrap` plus `ffmpeg-static` to fetch and convert audio to MP3.
-- Writes a temporary file to the OS temp directory.
-- Uploads the file stream to R2.
-- Deletes the temp file afterward.
-
-R2 integration lives in [r2.service.ts](/e:/Codes/backends/sonic-backend/src/r2/r2.service.ts).
-
-- `uploadFile` supports multipart upload testing.
-- `uploadStream` stores songs under `songs/<youtubeId>.mp3`.
-- `getSignedUrl` returns a signed URL valid for 5 minutes.
-
-### Library Ownership
-
-Library behavior lives in [library.service.ts](/e:/Codes/backends/sonic-backend/src/library/library.service.ts).
-
-- If a song already exists globally:
-  - add the song to the user's library only.
-- If it does not exist:
-  - download and upload it immediately
-  - create the song row
-  - add it to the user's library
-
-This flow is currently synchronous and blocks the request until the download/upload finishes.
-
-### Streaming Access Control
-
-Streaming logic lives in [stream.service.ts](/e:/Codes/backends/sonic-backend/src/stream/stream.service.ts).
-
-- Verifies the current user owns the song in `user_library`.
-- Loads the song from global storage.
-- Returns a signed R2 URL for playback.
-
-This endpoint enforces ownership, unlike the fast-path in `/songs/play`, which is oriented around availability rather than library membership.
+- `addPlaylist`: Creates a new user playlist with unique name enforcement per user.
+- `getUserPlaylists`: Retrieves all playlists for a user with song counts.
+- `getPlaylistSongs`: Fetches all songs in a playlist, ordered by their manual position.
+- `addSongToPlaylist`: Appends a song to a playlist, calculating the next available position.
+- `removeSongFromPlaylist`: Removes a song and re-indexes the positions of remaining songs to maintain sequence integrity.
 
 ## API Surface
 
@@ -255,176 +195,53 @@ This endpoint enforces ownership, unlike the fast-path in `/songs/play`, which i
 
 ### Songs
 
-- `POST /songs/play`
-  - Returns either ready playback or a background job reference.
-- `GET /songs/play/:songId`
-  - Returns a signed URL for a specific stored song.
-- `GET /songs/job/:jobId`
-  - Polls a processing job.
-- `GET /songs/getAll`
-  - Lists global songs.
+- `POST /songs/play`: Returns ready playback or background job.
+- `GET /songs/play/:songId`: Signed URL for a specific song.
+- `GET /songs/job/:jobId`: Poll status of a processing job.
+- `GET /songs/getAll`: List global songs.
 
-### R2
+### Playlists
 
-- `POST /r2/upload-test`
-  - Manual upload test endpoint.
+- `POST /playlist/create`: Create new playlist.
+- `GET /playlist/getAll`: Get user's playlists.
+- `GET /playlist/:id/songs`: Get songs in a playlist.
+- `POST /playlist/addSong`: Add song to playlist.
+- `POST /playlist/removeSong`: Remove song from playlist.
 
 ## Core Workflows
 
-## Workflow: Signup and Session Creation
+### Workflow: Playlist Song Sequencing
 
-1. Client calls `POST /auth/signup`.
-2. Password is hashed and user is inserted.
-3. Access token is signed.
-4. Temporary session row is created.
-5. Refresh token is signed with `sessionId`.
-6. Refresh token is hashed.
-7. Placeholder session is replaced with a real session using the same ID.
-
-## Workflow: Login
-
-1. Client submits email and password.
-2. Password hash is verified.
-3. A new access token and refresh token are generated.
-4. Session state is stored in PostgreSQL.
-
-## Workflow: Play Existing Song
-
-1. Client calls `POST /songs/play` with `youtubeId`.
-2. Service looks up `songs.youtubeId`.
-3. If present and signable, a signed URL is returned immediately.
-
-## Workflow: Play New Song
-
-1. Client calls `POST /songs/play` with `youtubeId`, `title`, and `duration`.
-2. Service returns `{ type: "job", jobId }`.
-3. Client polls `GET /songs/job/:jobId`.
-4. Backend downloads from YouTube, uploads to R2, inserts the song row, and signs the URL.
-5. Job eventually returns `done` with `streamUrl` or `error`.
+1. When adding a song, the system finds the current `max(position)` for that playlist.
+2. The new song is assigned `max(position) + 1`.
+3. When removing a song, the system identifies the `deletedPosition`.
+4. It then decrements the `position` of all songs where `position > deletedPosition`.
 
 ## Important Dependencies and Integrations
 
-### Database
-
-- `@neondatabase/serverless`
-- `drizzle-orm`
-- `drizzle-kit`
-
-These power schema definitions, migrations, and query execution against Neon Postgres.
-
-### Queue
-
-- `bullmq`
-- `ioredis`
-
-These provide durable job queuing with Redis.
-
-### Auth
-
-- `@nestjs/jwt`
-- `passport`
-- `passport-jwt`
-- `bcrypt`
-
-### Media
-
-- `yt-dlp-wrap`
-- `ffmpeg-static`
-- `fs-extra`
-
-### Object Storage
-
-- `@aws-sdk/client-s3`
-- `@aws-sdk/lib-storage`
-- `@aws-sdk/s3-request-presigner`
-
-These are used against Cloudflare R2's S3-compatible API.
-
-## Configuration and Environment
-
-Structured config is loaded by [configuration.ts](/e:/Codes/backends/sonic-backend/src/config/configuration.ts).
-
-### Documented in `.env.example`
-
-- `PORT`
-- `DATABASE_URL`
-- `REDIS_HOST`
-- `REDIS_PORT`
-- `JWT_ACCESS_SECRET`
-- `JWT_REFRESH_SECRET`
-- `JWT_ACCESS_EXPIRES_IN`
-- `JWT_REFRESH_EXPIRES_IN`
-
-### Required by code but missing from `.env.example`
-
-- `CLOUDFLARE_ACCOUNT_ID`
-- `R2_ACCESS_KEY`
-- `R2_SECRET_KEY`
-- `R2_BUCKET`
-
-Without those R2 variables, upload and signed URL generation will fail.
+- **Database**: `@neondatabase/serverless`, `drizzle-orm`, `drizzle-kit`.
+- **Queue**: `bullmq`, `ioredis`.
+- **Media**: `yt-dlp-wrap`, `ffmpeg-static`.
+- **Object Storage**: AWS S3 SDK (targeting Cloudflare R2).
 
 ## Key Design Decisions
 
-- NestJS modules are kept small and feature-oriented.
-- PostgreSQL is the source of truth for users, sessions, songs, and ownership.
-- R2 stores the actual audio assets; DB rows store only metadata and object keys.
-- Song deduplication is based on unique `youtubeId`.
-- Background processing uses BullMQ with Redis for durable job queuing.
-- Signed URLs are generated on demand and kept short-lived.
-- Refresh-token rotation is implemented by replacing session state on refresh.
+- **Song Deduplication**: Based on unique `youtubeId`.
+- **Playlist Sequencing**: Manual integer `position` allows for specific user ordering.
+- **Durable Jobs**: BullMQ/Redis ensures song processing isn't lost if the API restarts.
+- **Signed URLs**: All media access is secured via short-lived signed URLs.
 
 ## Assumptions
 
-- A YouTube ID uniquely identifies a single canonical audio asset for this product.
-- One global stored song can be shared by many users.
-- Signed URL generation is treated as a good proxy for storage availability.
-- The API and worker services can run as separate processes, with Redis for job coordination.
-- Clients know to poll when `/songs/play` returns `{ type: "job", jobId }`.
+- A YouTube ID uniquely identifies a single canonical audio asset.
+- Playlists are private by default but schema supports `isPublic`.
+- Removal of songs from a playlist does not affect the global `songs` catalog or user library.
 
 ## Known Issues and Limitations
 
-- Job state is now durable via Redis, but requires Redis setup for production.
-- Multi-instance deployments are now supported with Redis coordination.
-- `/library/addSong` still performs blocking download/upload work and does not reuse the job system.
-- R2 access uses raw `process.env` directly instead of Nest `ConfigService`.
-- `.env.example` is incomplete for real deployments because R2 variables are missing.
-- `uploads/` exists locally, but the download pipeline now uses OS temp files rather than that folder for the actual processing path.
-- `yt-dlp.exe` is committed to the repository, which increases repo size and couples the project to a Windows-friendly workflow.
-- Some controllers expose overlapping ways to retrieve playback URLs:
-  - `/songs/play/:songId`
-  - `/stream/:songId` (not implemented)
-- `/songs/play` can return immediate playback for an existing song without checking whether the user owns that song in `user_library`.
-- There are signs of generated or boilerplate tests, but test coverage for real business workflows is minimal.
-- A few files contain encoding artifacts in log messages, suggesting mixed file encoding history.
-
-## Debugging Notes
-
-### If auth fails
-
-- Verify both JWT secrets are set.
-- Confirm the access token uses the `Authorization: Bearer <token>` header.
-- Check that the refresh token's `sessionId` still exists in `sessions`.
-
-### If song processing fails
-
-- Confirm `yt-dlp.exe` exists or can be downloaded at startup.
-- Confirm `ffmpeg-static` is resolvable in the current environment.
-- Verify YouTube access from the host machine.
-- Verify all R2 variables are set and valid.
-- Inspect temp directory permissions.
-
-### If playback URL generation fails
-
-- Confirm the `songs.r2Key` points to an existing object in R2.
-- Check bucket name and account endpoint configuration.
-- For existing songs, a signing failure causes `/songs/play` to fall back to job processing.
-
-### If library playback fails
-
-- Check `user_library` ownership first.
-- Then verify the `songs` record exists.
-- Then verify the referenced R2 object exists.
+- Playlist thumbnail logic (`thumbnailUrl` array) is present in schema but not fully implemented in service.
+- Manual reordering of songs (changing positions) is not yet exposed via a dedicated endpoint.
+- `/songs/play` does not currently enforce library or playlist ownership.
 
 ## Suggested Maintenance Practice
 
@@ -440,9 +257,7 @@ Update this file before each `git push` by checking:
 
 ## Recommended Next Improvements
 
-- Job state is now durable via Redis/BullMQ.
-- Refactor `/library/addSong` to reuse the same asynchronous job pipeline as `/songs/play`.
-- Centralize song ingestion logic so `library` and `songs` do not duplicate create/upload flow.
-- Replace direct `process.env` access in the R2 service with Nest config injection.
-- Expand automated tests around auth rotation, song jobs, and library ownership rules.
-- Decide whether `/songs/play` should enforce library ownership or remain a pure availability endpoint.
+- Implement manual reordering of playlist songs.
+- Implement auto-generation of playlist thumbnails from the first few songs.
+- Refactor `user_library` to possibly use the playlist system (e.g., a "Liked Songs" system playlist).
+- Centralize all ingest logic into a single internal service.

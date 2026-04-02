@@ -9,6 +9,7 @@ import { AuthModule } from '../../modules/auth/auth.module';
 import { SongsApiModule } from '../../modules/songs/songs-api.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { PlaylistModule } from 'src/modules/playlist/playlist.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { AppService } from './app.service';
     R2Module,
     AuthModule,
     SongsApiModule,
+    PlaylistModule
   ],
   controllers: [AppController],
   providers: [
@@ -36,4 +38,4 @@ import { AppService } from './app.service';
     },
   ],
 })
-export class ApiModule {}
+export class ApiModule { }

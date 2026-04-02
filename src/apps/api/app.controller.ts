@@ -5,7 +5,7 @@ import { GetCurrentUser } from '../../infrastructure/common/decorators/get-curre
 
 @Controller()
 export class AppController {
-  constructor(private readonly appService: AppService) {}
+  constructor(private readonly appService: AppService) { }
 
   @Get()
   getHello(): string {
