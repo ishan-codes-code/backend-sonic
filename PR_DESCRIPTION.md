@@ -96,8 +96,8 @@ The `/songs/play` flow is the core of the app:
 ## API Surface
 
 ### Authentication
-- `POST /auth/signup`: User registration + automated playlist creation.
-- `POST /auth/login`: Credential validation.
+- `POST /auth/signup`: User registration (requires manual verification before first login).
+- `POST /auth/login`: Credential validation (checks for verified email).
 - `POST /auth/refresh`: Token rotation.
 - `POST /auth/logout`: Session termination.
 

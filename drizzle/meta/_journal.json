@@ -120,6 +120,13 @@
       "when": 1775915512145,
       "tag": "0016_peaceful_sentry",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1775941773974,
+      "tag": "0017_opposite_talon",
+      "breakpoints": true
     }
   ]
 }

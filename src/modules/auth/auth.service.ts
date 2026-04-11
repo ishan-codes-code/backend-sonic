@@ -45,18 +45,31 @@ export class AuthService {
     });
 
     // 2. Create favorites playlist
-    const favorites = await this.playlistService.createFavoritesPlaylist(newUser.id);
+    const favorites = await this.playlistService.createFavoritesPlaylist(
+      newUser.id,
+    );
 
     // 3. Save playlist ID in user
-    await this.authUsersService.updateFavoritesPlaylistId(newUser.id, favorites.id);
+    await this.authUsersService.updateFavoritesPlaylistId(
+      newUser.id,
+      favorites.id,
+    );
 
-    return this.generateAuthParams(newUser.id, newUser.email);
+    return {
+      message: 'Successful you can login',
+    };
   }
 
   async login(loginDto: LoginDto) {
     const user = await this.authUsersService.findByEmail(loginDto.email);
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (!user.emailVerified) {
+      throw new UnauthorizedException(
+        'email not verified Contact srivastava.ishan.work@gmail.com for verification',
+      );
     }
 
     const isPasswordValid = await bcrypt.compare(

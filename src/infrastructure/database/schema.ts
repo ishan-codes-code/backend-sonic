@@ -5,7 +5,7 @@ export const users = pgTable('users', {
   name: varchar('name', { length: 150 }).notNull(),
   email: varchar('email', { length: 255 }).notNull().unique(),
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
-  emailVerified: boolean('email_verified').default(true),
+  emailVerified: boolean('email_verified').default(false),
   favoritesPlaylistId: uuid('favorites_playlist_id').references(() => playlist.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
