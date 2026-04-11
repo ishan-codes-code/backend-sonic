@@ -7,11 +7,13 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { AuthUsersService } from './auth-users.service';
 import { AuthSessionsService } from './auth-sessions.service';
+import { PlaylistModule } from '../playlist/playlist.module';
 
 @Module({
   imports: [
     ConfigModule,
     PassportModule,
+    PlaylistModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

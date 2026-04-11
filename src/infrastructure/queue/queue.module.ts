@@ -15,12 +15,17 @@ import {
     {
       provide: REDIS_CONNECTION,
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) =>
-        new IORedis({
-          host: configService.get<string>('queue.host') ?? '127.0.0.1',
-          port: configService.get<number>('queue.port') ?? 6379,
+      useFactory: (configService: ConfigService) => {
+        const url = configService.get<string>('REDIS_URL');
+
+        if (!url) {
+          throw new Error('REDIS_URL is not defined');
+        }
+        return new IORedis(url, {
           maxRetriesPerRequest: null,
-        }),
+          tls: {}, // 🔥 REQUIRED for Upstash
+        });
+      }
     },
     {
       provide: SONGS_QUEUE,
@@ -34,4 +39,4 @@ import {
   ],
   exports: [QueueService, REDIS_CONNECTION, SONGS_QUEUE],
 })
-export class QueueModule {}
+export class QueueModule { }

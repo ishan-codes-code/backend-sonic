@@ -1,15 +1,27 @@
 import { Injectable } from '@nestjs/common';
 import { QueueService } from '../../infrastructure/queue/queue.service';
-import { SongDto } from './dto/song.dto';
+import { SongCatalogService } from './song-catalog.service';
+
+export interface ProcessJobData {
+  youtubeId: string;
+  songId?: string;
+  trackName: string;
+  artistName: string;
+  youtubeTitle: string;
+  image?: string;
+  normalizedTrackName: string;
+  normalizedArtistName: string;
+}
 
 @Injectable()
 export class SongJobsService {
-  constructor(private readonly queueService: QueueService) {}
+  constructor(
+    private readonly queueService: QueueService,
+    private readonly songCatalogService: SongCatalogService,
+  ) { }
 
-  async createPlayJob(songDto: SongDto) {
-    return this.queueService.getQueue().add('play-song', {
-      ...songDto,
-    });
+  async createProcessJob(data: ProcessJobData) {
+    return this.queueService.getQueue().add('process-song', data);
   }
 
   async getJobStatus(jobId: string) {
@@ -21,10 +33,12 @@ export class SongJobsService {
 
     const state = await job.getState();
 
+
     return {
       status: state,
       progress: job.progress,
-      streamUrl: job.data?.streamUrl,
+      streamUrl: job.data?.streamUrl ?? null,
+      song: job.data?.song ?? null,
     };
   }
 }

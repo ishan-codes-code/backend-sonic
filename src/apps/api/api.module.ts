@@ -9,6 +9,12 @@ import { AuthModule } from '../../modules/auth/auth.module';
 import { SongsApiModule } from '../../modules/songs/songs-api.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { PlaylistModule } from 'src/modules/playlist/playlist.module';
+import { RecommendationModule } from 'src/modules/recommendation/recommendation.module';
+import { SearchModule } from 'src/modules/search/search.module';
+import { DiscoveryModule } from 'src/modules/discovery/discovery.module';
+
+
 
 @Module({
   imports: [
@@ -26,6 +32,10 @@ import { AppService } from './app.service';
     R2Module,
     AuthModule,
     SongsApiModule,
+    PlaylistModule,
+    SearchModule,
+    RecommendationModule,
+    DiscoveryModule,
   ],
   controllers: [AppController],
   providers: [
@@ -36,4 +46,4 @@ import { AppService } from './app.service';
     },
   ],
 })
-export class ApiModule {}
+export class ApiModule { }

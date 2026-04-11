@@ -1,1 +1,1 @@
-export {};
+export { normalizeString } from './string.utils';
