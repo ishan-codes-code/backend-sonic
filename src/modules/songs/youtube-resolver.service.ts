@@ -42,19 +42,47 @@ export class YoutubeResolverService {
 
   constructor(private readonly httpService: HttpService) { }
 
+
+
   private scoreVideo(item: YoutubeSearchItem, normalizedArtist: string): number {
     const title = item.snippet?.title?.toLowerCase() ?? '';
+    const channel = item.snippet?.channelTitle?.toLowerCase() ?? '';
+
     let score = 0;
 
-    if (title.includes('official')) score += 5;
-    if (title.includes('audio')) score += 3;
-    if (title.includes(normalizedArtist)) score += 4;
-    if (title.includes('remix')) score -= 5;
-    if (title.includes('live')) score -= 3;
-    if (title.includes('cover')) score -= 3;
+    const isTopic = channel.includes('topic');
+
+    // 🎯 STRONG SIGNALS
+    if (isTopic) score += 20;
+
+    if (title.includes('official audio')) {
+      score += 12;
+    } else if (title.includes('audio')) {
+      score += 2;
+    }
+
+    // 🎬 Official video
+    if (title.includes('official music video')) score += 8;
+    else if (title.includes('official video')) score += 6;
+
+    // 🎤 Matching
+    if (title.includes(normalizedArtist)) score += 6;
+    if (channel.includes(normalizedArtist)) score += 6;
+
+    // 📺 Trusted channels
+    if (channel.includes('vevo')) score += 5;
+
+    // ❌ NEGATIVE SIGNALS
+    if (title.includes('remix')) score -= 6;
+    if (title.includes('live')) score -= 5;
+    if (title.includes('cover')) score -= 6;
+    if (title.includes('lyrics')) score -= 6;
+    if (title.includes('karaoke')) score -= 8;
 
     return score;
   }
+
+
 
   async resolveFromTrackAndArtist(
     trackName: string,

@@ -102,23 +102,6 @@ export class PlaylistService {
       }
 
       // 2️⃣ Get songs using join
-      // const songs = await this.db
-      //   .select({
-      //     id: schema.songs.id,
-      //     trackName: schema.songs.trackName,
-      //     artistName: schema.songs.artistName,
-      //     image: schema.songs.image,
-      //     duration: schema.songs.duration,
-      //     youtubeId: schema.songs.youtubeId,
-      //     position: schema.playlistSongs.position,
-      //   })
-      //   .from(schema.playlistSongs)
-      //   .innerJoin(
-      //     schema.songs,
-      //     eq(schema.playlistSongs.songId, schema.songs.id),
-      //   )
-      //   .where(eq(schema.playlistSongs.playlistId, playlistId))
-      //   .orderBy(asc(schema.playlistSongs.position));
 
       const songs = await this.db
         .select({
@@ -218,10 +201,48 @@ export class PlaylistService {
         throw new NotFoundException('Playlist not found');
       }
 
+      // 2. Resolve song image
+      const song = await this.db.query.songs.findFirst({
+        where: eq(schema.songs.id, songId),
+        columns: { image: true },
+      });
+
       const result = await this.playlistRepository.removeSongFromPlaylist(playlistId, songId);
 
       if (!result) {
         throw new NotFoundException('Song not found in playlist');
+      }
+
+      // 3. Update Thumbnail if it was present and no other song uses it
+      if (song?.image) {
+        const currentThumbs = playlist.thumbnailUrl || [];
+        if (currentThumbs.includes(song.image)) {
+          // Check if any other song in THIS playlist still has the same image
+          const otherSongWithSameImage = await this.db
+            .select({ id: schema.songs.id })
+            .from(schema.playlistSongs)
+            .innerJoin(
+              schema.songs,
+              eq(schema.playlistSongs.songId, schema.songs.id),
+            )
+            .where(
+              and(
+                eq(schema.playlistSongs.playlistId, playlistId),
+                eq(schema.songs.image, song.image),
+              ),
+            )
+            .limit(1);
+
+          if (otherSongWithSameImage.length === 0) {
+            const updatedThumbs = currentThumbs.filter(
+              (img) => img !== song.image,
+            );
+            await this.db
+              .update(schema.playlist)
+              .set({ thumbnailUrl: updatedThumbs })
+              .where(eq(schema.playlist.id, playlistId));
+          }
+        }
       }
 
       return {

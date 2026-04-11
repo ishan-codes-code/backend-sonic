@@ -9,8 +9,8 @@ Sonic Backend is a modern NestJS API designed for high-performance music streami
 The system supports:
 - **Unified Playback**: A single `/songs/play` endpoint that resolves songs from various sources (global catalog, direct IDs, or YouTube).
 - **Intelligent Ingestion**: Background workers handle audio downloading (`yt-dlp`), normalization/conversion (`ffmpeg`), and secure storage (Cloudflare R2).
-- **Search & Discovery**: Integrated track search and similar-song recommendations powered by the Last.fm API.
-- **Library & Playlists**: Highly-structured user library and playlist management with manual sequencing and optimistic re-indexing.
+- **Discovery Engine**: Genre-based track discovery and similar-song recommendations powered by Last.fm tags and metrics.
+- **Library & Playlists**: Structured user library with automated "Favorites" system and dynamic mosaic thumbnails.
 
 ## Purpose
 
@@ -28,6 +28,7 @@ The system balances shared storage efficiency with personal user experiences. Ea
 - **Queue**: BullMQ with IORedis (for background processing)
 - **Authentication**: JWT (Access & Refresh tokens with session persistence)
 - **Media**: `yt-dlp-wrap` for downloads, `ffmpeg-static` for audio processing
+- **Discovery**: Last.fm API (v2.0)
 
 ### Boot Flow
 
@@ -38,7 +39,7 @@ The application runs as two distinct processes:
 
 ### Module Layout
 
-- **`ApiModule`**: Core composition in [src/apps/api/api.module.ts](/src/apps/api/api.module.ts). Orchestrates global modules (Config, Throttler, Database, R2) and feature modules (Auth, Songs, Playlist, Search, Recommendation).
+- **`ApiModule`**: Core composition in [src/apps/api/api.module.ts](/src/apps/api/api.module.ts). Orchestrates global modules (Config, Throttler, Database, R2) and feature modules (Auth, Songs, Playlist, Search, Recommendation, Discovery).
 - **`WorkerModule`**: Composition in [src/apps/worker/worker.module.ts](/src/apps/worker/worker.module.ts). Houses the `SongProcessor` logic.
 
 ## Data Model
@@ -47,20 +48,21 @@ Schema lives in [src/infrastructure/database/schema.ts](/src/infrastructure/data
 
 ### Core Tables
 
-- **`users`**: Profile management and password hashing.
+- **`users`**: Profile management with `favoritesPlaylistId` to link user to their system favorites.
 - **`sessions`**: Durable session tracking linked to refresh token hashes.
 - **`songs`**: Unified global catalog.
   - Key fields: `youtubeId` (unique), `r2Key`, `normalizedTitle`, `normalizedArtist`, `lastfmId`.
 - **`playlist`**: User-owned song collections.
-  - Supports `isSystem` (for Recently Played, etc.) and `isPublic`.
+  - Supports `isSystem` (for Favorites, etc.), `isPublic`, and `thumbnailUrl` (string array of covers).
 - **`playlist_songs`**: Junction table with a mandatory `position` field for sequencing.
 
 ## Source Structure
 
 - `src/apps/`: Entry points for API and Worker.
-- `src/modules/auth/`: JWT-based auth and session rotation.
+- `src/modules/auth/`: JWT-based auth and automatic "Favorites" initialization.
 - `src/modules/songs/`: Granular song management (catalog, file handling, streaming, and YouTube resolution).
-- `src/modules/playlist/`: CRUD operations for playlists and song sequencing.
+- `src/modules/playlist/`: CRUD operations with dynamic thumbnailing (mosaic of first 4 unique covers).
+- `src/modules/discovery/`: Genre-based discovery via Last.fm tags.
 - `src/modules/search/`: Last.fm-backed track metadata search.
 - `src/modules/recommendation/`: Similarity-based discovery with caching.
 - `src/services/`: Shared cross-module services (e.g., `LastFmService`).
@@ -73,7 +75,7 @@ Schema lives in [src/infrastructure/database/schema.ts](/src/infrastructure/data
 The `/songs/play` flow is the core of the app:
 1. **Direct Lookup**: Resolves by specific `songId` if provided.
 2. **Catalog Match**: Normalizes input `title` + `artist` and checks the `songs` table for an existing record.
-3. **YouTube Resolution**: If not found in the catalog, resolves a YouTube source using a scoring heuristic.
+3. **YouTube Resolution**: If not found in the catalog, resolves a YouTube source using a multi-signal scoring heuristic (Topics, Vevo, etc.).
 4. **Response**: Returns `{ type: 'ready', streamUrl }` if cached in R2, or `{ type: 'job', jobId }` if processing is required.
 
 ### Background Job Flow (`SongProcessorService`)
@@ -83,16 +85,18 @@ The `/songs/play` flow is the core of the app:
 3. Uploads to Cloudflare R2 and persists the song entry to the database.
 4. Updates BullMQ job data with the final `streamUrl` and `song` metadata.
 
-### Playlist Sequencing
+### Playlist & Library Management
 
-Playlists maintain an integer `position` for every song.
-- **Adding**: Appends with `max(position) + 1`.
-- **Removing**: Automatic decrementing of `position` for all subsequent songs in the playlist to prevent sequence gaps.
+- **Automated Favorites**: New users receive a "Favorites" system playlist on signup. The app protects this playlist from deletion and renames.
+- **Dynamic Thumbnailing**: Adding or removing songs automatically triggers a refresh of the `thumbnailUrl` array (max 4 unique covers).
+- **Sequencing**:
+  - **Adding**: Appends with `max(position) + 1`.
+  - **Removing**: Automatic decrementing of `position` for all subsequent songs in the playlist to prevent sequence gaps.
 
 ## API Surface
 
 ### Authentication
-- `POST /auth/signup`: User registration.
+- `POST /auth/signup`: User registration + automated playlist creation.
 - `POST /auth/login`: Credential validation.
 - `POST /auth/refresh`: Token rotation.
 - `POST /auth/logout`: Session termination.
@@ -106,24 +110,24 @@ Playlists maintain an integer `position` for every song.
 - `POST /playlist/create`: Create new playlist.
 - `GET /playlist/getAll`: List user playlists with song counts.
 - `GET /playlist/:id/songs`: Get ordered songs from a playlist.
-- `POST /playlist/song/add`: Add song to a playlist.
-- `DELETE /playlist/:id/song/:songId`: Remove song (triggers re-indexing).
-- `DELETE /playlist/:id`: Delete whole playlist.
+- `POST /playlist/song/add`: Add song to a playlist (triggers thumbnail update).
+- `DELETE /playlist/:id/song/:songId`: Remove song (triggers thumbnail cleanup & re-indexing).
+- `DELETE /playlist/:id`: Delete whole playlist (system playlists protected).
 
 ### Search & Discovery
 - `GET /search?q=...`: Search Last.fm for track metadata.
+- `GET /discovery/genre?genre=...`: Get top tracks for a specific genre.
 - `GET /recommendations?title=...&artist=...`: Get similar tracks (cached for 15 mins).
 
 ## Design Decisions
 
 - **Title/Artist Normalization**: All manual lookups use lowercase, trimmed, bracket-free strings to maximize hit rate.
 - **Signed URLs**: Media is never public; R2 generates short-lived URLs for secure streaming.
-- **In-Memory Job Tracking**: Users get immediate feedback (Job ID) while the backend processes heavy media tasks.
+- **Heuristic Scoring**: YouTube resolution prioritizes "Topic" channels and "Official Video" tags to ensure quality audio.
 
 ## Known Limitations
 
-- **Reordering**: Drag-and-drop position updates are not yet implemented in the API.
-- **Thumbnailing**: `thumbnailUrl` array exists in schema but is not yet auto-populated from playlist contents.
+- **Reordering**: Manual drag-and-drop position re-indexing is not yet exposed via a single "batch" endpoint.
 
 ## Suggested Maintenance Practice
 
