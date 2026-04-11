@@ -7,6 +7,7 @@ import {
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import * as os from 'os';
+import { spawn } from 'child_process';
 import { R2Service } from '../../infrastructure/r2/r2.service';
 
 const YTDlpWrap = require('yt-dlp-wrap').default;
@@ -40,11 +41,12 @@ export class SongFilesService implements OnModuleInit {
 
   async downloadAudio(videoId: string) {
     const url = `https://www.youtube.com/watch?v=${videoId}`;
-    // const filename = `${videoId}-${Date.now()}.mp3`
-    const filename = `${videoId}.mp3`;
+    // const filename = `${videoId}-${Date.now()}.m4a`
+    const filename = `${videoId}.m4a`;
 
     // Use a temporary file for more reliable extraction (ffmpeg often needs a seekable output for headers)
-    const tempFilePath = path.join(os.tmpdir(), `${videoId}-${Date.now()}.mp3`);
+    const tempFilePath = path.join(os.tmpdir(), `${videoId}-${Date.now()}`);
+    const finalPath = `${tempFilePath}.m4a`;
 
     const ytDlpArgs = [
       url,
@@ -52,7 +54,9 @@ export class SongFilesService implements OnModuleInit {
       'ba/b',
       '-x',
       '--audio-format',
-      'mp3',
+      'aac',
+      '--audio-quality',
+      '128K',
       '--ffmpeg-location',
       ffmpegStatic,
       '--no-check-certificate',
@@ -65,38 +69,41 @@ export class SongFilesService implements OnModuleInit {
       tempFilePath,
     ];
 
-    console.log(`Starting download for ${videoId} to ${tempFilePath}...`);
+    console.log(`Starting download for ${videoId} to ${finalPath}...`);
 
     try {
       // Execute download and extraction to the temporary file
       await this.ytDlpWrap.execPromise(ytDlpArgs);
 
-      if (!fs.existsSync(tempFilePath)) {
+      if (!fs.existsSync(finalPath)) {
         throw new Error('Extraction finished but output file was not found.');
       }
 
-      console.log(`Extraction complete. Uploading ${tempFilePath} to R2...`);
+      const duration = await this.extractDurationInSeconds(finalPath);
+
+      console.log(`Extraction complete. Uploading ${finalPath} to R2...`);
 
       // Create a read stream from the finished file
-      const fileStream = fs.createReadStream(tempFilePath);
+      const fileStream = fs.createReadStream(finalPath);
 
       const key = await this.r2Service.uploadStream(fileStream, filename);
 
       // Cleanup the temporary file
       await fs
-        .remove(tempFilePath)
+        .remove(finalPath)
         .catch((err) => console.warn('Failed to cleanup temp file:', err));
 
       return {
         success: true,
         r2Key: key,
+        duration,
       };
     } catch (err: any) {
       console.error('❌ Audio Download/Upload failed:', err.message);
 
       // Attempt cleanup if file exists
-      if (fs.existsSync(tempFilePath)) {
-        await fs.remove(tempFilePath).catch(() => {});
+      if (fs.existsSync(finalPath)) {
+        await fs.remove(finalPath).catch(() => {});
       }
 
       throw new HttpException(
@@ -104,5 +111,37 @@ export class SongFilesService implements OnModuleInit {
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+  }
+
+  private extractDurationInSeconds(filePath: string): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const ffmpegProcess = spawn(ffmpegStatic as string, ['-i', filePath]);
+      let stderr = '';
+
+      ffmpegProcess.stderr.on('data', (chunk) => {
+        stderr += chunk.toString();
+      });
+
+      ffmpegProcess.on('error', (error) => {
+        reject(error);
+      });
+
+      ffmpegProcess.on('close', () => {
+        const match = stderr.match(
+          /Duration:\s*(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)/,
+        );
+
+        if (!match) {
+          reject(new Error('Failed to extract duration from processed audio.'));
+          return;
+        }
+
+        const hours = Number(match[1]);
+        const minutes = Number(match[2]);
+        const seconds = Number(match[3]);
+
+        resolve(Math.round(hours * 3600 + minutes * 60 + seconds));
+      });
+    });
   }
 }

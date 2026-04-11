@@ -14,10 +14,10 @@ export class AuthUsersService {
   ) {}
 
   async create(user: InsertUser) {
-    const [newUser] = await this.db
+    const [newUser] = (await this.db
       .insert(schema.users)
       .values(user)
-      .returning();
+      .returning()) as any;
     return newUser;
   }
 
@@ -31,5 +31,11 @@ export class AuthUsersService {
     return this.db.query.users.findFirst({
       where: eq(schema.users.id, id),
     });
+  }
+  async updateFavoritesPlaylistId(userId: string, playlistId: string) {
+    await this.db
+      .update(schema.users)
+      .set({ favoritesPlaylistId: playlistId })
+      .where(eq(schema.users.id, userId));
   }
 }

@@ -1,46 +1,54 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { GetCurrentUser } from 'src/infrastructure/common/decorators/get-current-user.decorator';
 import { JwtAuthGuard } from 'src/infrastructure/common/guards/jwt-auth.guard';
 import { CreatePlaylistDto } from './dto/createPlaylist.dto';
 import { PlaylistService } from './playlist.service';
-import { SongToPlaylistDto } from './dto/addSongToPlaylisy.dto';
+import { AddSongToPlaylistDto } from './dto/addSongToPlaylist.dto';
 
 @Controller('playlist')
 export class PlaylistController {
-  constructor(private readonly playlistServive: PlaylistService) { }
+  constructor(private readonly playlistService: PlaylistService) { }
 
   @Post('create')
   @UseGuards(JwtAuthGuard)
   async addPlaylist(@GetCurrentUser() data, @Body() dto: CreatePlaylistDto) {
-    return await this.playlistServive.addPlaylist(data.id, dto);
+    return await this.playlistService.addPlaylist(data.id, dto);
   }
 
   @Get('getAll')
   @UseGuards(JwtAuthGuard)
   async getUserPlaylists(@GetCurrentUser() data) {
-    return await this.playlistServive.getUserPlaylists(data.id);
+    return await this.playlistService.getUserPlaylists(data.id);
   }
 
   @Get(':id/songs')
   @UseGuards(JwtAuthGuard)
   async getPlaylistSongs(@GetCurrentUser() data, @Param('id') id: string) {
-    return await this.playlistServive.getPlaylistSongs(data.id, id);
+    return await this.playlistService.getPlaylistSongs(data.id, id);
   }
 
-  @Post('addSong')
+  @Post('song/add')
   @UseGuards(JwtAuthGuard)
   async addSongToPlaylist(
     @GetCurrentUser() data,
-    @Body() dto: SongToPlaylistDto,
+    @Body() dto: AddSongToPlaylistDto,
   ) {
-    return await this.playlistServive.addSongToPlaylist(data.id, dto);
+    return await this.playlistService.addSongToPlaylist(data.id, dto);
   }
-  @Post('removeSong')
+
+  @Delete(':id/song/:songId')
   @UseGuards(JwtAuthGuard)
   async removeSongFromPlaylist(
     @GetCurrentUser() data,
-    @Body() dto: SongToPlaylistDto,
+    @Param('id') id: string,
+    @Param('songId') songId: string,
   ) {
-    return await this.playlistServive.removeSongFromPlaylist(data.id, dto);
+    return await this.playlistService.removeSongFromPlaylist(data.id, id, songId);
+  }
+
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard)
+  async deletePlaylist(@GetCurrentUser() data, @Param('id') id: string) {
+    return await this.playlistService.deletePlaylist(data.id, id);
   }
 }

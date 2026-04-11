@@ -5,6 +5,7 @@ import { PlaylistRepository } from './playlist.repository';
 
 @Module({
   controllers: [PlaylistController],
-  providers: [PlaylistService, PlaylistRepository]
+  providers: [PlaylistService, PlaylistRepository],
+  exports: [PlaylistService],
 })
 export class PlaylistModule { }

@@ -6,6 +6,7 @@ export const users = pgTable('users', {
   email: varchar('email', { length: 255 }).notNull().unique(),
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
   emailVerified: boolean('email_verified').default(true),
+  favoritesPlaylistId: uuid('favorites_playlist_id').references(() => playlist.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -18,27 +19,32 @@ export const sessions = pgTable('sessions', {
 });
 
 
+
+
 export const songs = pgTable('songs', {
   id: uuid('id').defaultRandom().primaryKey(),
 
+  // 🎬 SOURCE (AUDIO) 
   youtubeId: text('youtube_id').notNull().unique(),
-  title: text('title').notNull(),
+  r2Key: text('r2_key').notNull().unique(),
 
-  // ✅ NEW: creator info
-  channelName: text('channel_name'),     // optional (for now)
-  channelId: text('channel_id'),         // optional but IMPORTANT
-
-
-  duration: integer('duration'), // in seconds
-  r2Key: text('r2_key').notNull(),
-
+  // 🎵 METADATA (FROM LAST.FM) 
+  trackName: text('track_name').notNull(),
+  artistName: text('artist_name').notNull(),
+  albumName: text('album_name'),
+  image: text('image'),
+  // optional cache 
+  duration: integer('duration').notNull(),
+  lastfmId: text('lastfm_id'),
+  // 🧪 NORMALIZATION (CRITICAL)
+  normalizedTrackName: text('normalized_track_name').notNull(),
+  normalizedArtistName: text('normalized_artist_name').notNull(),
+  // 🧾 DEBUG / FALLBACK 
+  youtubeTitle: text('youtube_title'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
-}, (table) => [
-  uniqueIndex('unique_youtube_id_idx').on(table.youtubeId),
+});
 
-  // ✅ optional but smart (for faster queries later)
-  // index('channel_id_idx').on(table.channelId),
-]);
+
 
 
 export const playlist = pgTable('playlist', {

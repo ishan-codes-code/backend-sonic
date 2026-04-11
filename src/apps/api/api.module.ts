@@ -10,6 +10,11 @@ import { SongsApiModule } from '../../modules/songs/songs-api.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PlaylistModule } from 'src/modules/playlist/playlist.module';
+import { RecommendationModule } from 'src/modules/recommendation/recommendation.module';
+import { SearchModule } from 'src/modules/search/search.module';
+import { DiscoveryModule } from 'src/modules/discovery/discovery.module';
+
+
 
 @Module({
   imports: [
@@ -27,7 +32,10 @@ import { PlaylistModule } from 'src/modules/playlist/playlist.module';
     R2Module,
     AuthModule,
     SongsApiModule,
-    PlaylistModule
+    PlaylistModule,
+    SearchModule,
+    RecommendationModule,
+    DiscoveryModule,
   ],
   controllers: [AppController],
   providers: [

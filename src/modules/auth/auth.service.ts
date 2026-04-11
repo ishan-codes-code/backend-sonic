@@ -12,6 +12,7 @@ import { AuthSessionsService } from './auth-sessions.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
+import { PlaylistService } from '../playlist/playlist.service';
 
 export interface JwtPayload {
   sub: string;
@@ -25,6 +26,7 @@ export class AuthService {
     private readonly authSessionsService: AuthSessionsService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly playlistService: PlaylistService,
   ) {}
 
   async signup(signupDto: SignupDto) {
@@ -41,6 +43,12 @@ export class AuthService {
       email: signupDto.email,
       passwordHash,
     });
+
+    // 2. Create favorites playlist
+    const favorites = await this.playlistService.createFavoritesPlaylist(newUser.id);
+
+    // 3. Save playlist ID in user
+    await this.authUsersService.updateFavoritesPlaylistId(newUser.id, favorites.id);
 
     return this.generateAuthParams(newUser.id, newUser.email);
   }

@@ -1,0 +1,1 @@
+ALTER TABLE "songs" ALTER COLUMN "r2_key" SET NOT NULL;

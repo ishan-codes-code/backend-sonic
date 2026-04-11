@@ -11,10 +11,11 @@ import { DRIZZLE_PROVIDER } from 'src/infrastructure/database/database.module';
 import { NeonHttpDatabase } from 'drizzle-orm/neon-http';
 import * as schema from '../../infrastructure/database/schema';
 import { and, asc, desc, eq, gt } from 'drizzle-orm';
-import { SongToPlaylistDto } from './dto/addSongToPlaylisy.dto';
+import { AddSongToPlaylistDto } from './dto/addSongToPlaylist.dto';
 import { max } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { PlaylistRepository } from './playlist.repository';
+import { getTableColumns } from 'drizzle-orm';
 
 @Injectable()
 export class PlaylistService {
@@ -25,8 +26,12 @@ export class PlaylistService {
   ) { }
 
   async addPlaylist(userId: string, dto: CreatePlaylistDto) {
+    if (dto.name.trim().toLowerCase() === 'favorites') {
+      throw new BadRequestException('The name "Favorites" is reserved for the system');
+    }
+
     try {
-      const [newPlaylist] = await this.db
+      const [newPlaylist] = (await this.db
         .insert(schema.playlist)
         .values({
           name: dto.name.trim(),
@@ -35,7 +40,7 @@ export class PlaylistService {
           isPublic: dto.isPublic ?? false,
           isSystem: false, // important → user created playlist
         })
-        .returning();
+        .returning()) as any;
 
       return {
         message: 'Playlist created successfully',
@@ -97,15 +102,28 @@ export class PlaylistService {
       }
 
       // 2️⃣ Get songs using join
+      // const songs = await this.db
+      //   .select({
+      //     id: schema.songs.id,
+      //     trackName: schema.songs.trackName,
+      //     artistName: schema.songs.artistName,
+      //     image: schema.songs.image,
+      //     duration: schema.songs.duration,
+      //     youtubeId: schema.songs.youtubeId,
+      //     position: schema.playlistSongs.position,
+      //   })
+      //   .from(schema.playlistSongs)
+      //   .innerJoin(
+      //     schema.songs,
+      //     eq(schema.playlistSongs.songId, schema.songs.id),
+      //   )
+      //   .where(eq(schema.playlistSongs.playlistId, playlistId))
+      //   .orderBy(asc(schema.playlistSongs.position));
+
       const songs = await this.db
         .select({
-          id: schema.songs.id,
-          title: schema.songs.title,
-          duration: schema.songs.duration,
-          youtubeId: schema.songs.youtubeId,
+          ...getTableColumns(schema.songs),
           position: schema.playlistSongs.position,
-          channelName: schema.songs.channelName,
-          channelId: schema.songs.channelId,
         })
         .from(schema.playlistSongs)
         .innerJoin(
@@ -122,12 +140,12 @@ export class PlaylistService {
     }
   }
 
-  async addSongToPlaylist(userId: string, dto: SongToPlaylistDto) {
+  async addSongToPlaylist(userId: string, dto: AddSongToPlaylistDto) {
     const { playlistId, songId } = dto;
 
     try {
       // 1️⃣ Check playlist ownership
-      const playlist = await this.playlistRepository.returnPlaylistId(
+      const playlist = await this.playlistRepository.findByIdAndUserId(
         userId,
         playlistId,
       );
@@ -136,7 +154,13 @@ export class PlaylistService {
         throw new NotFoundException('Playlist not found');
       }
 
-      // 2️⃣ Get next position (max + 1)
+      // 2️⃣ Get song info for thumbnail update
+      const song = await this.db.query.songs.findFirst({
+        where: eq(schema.songs.id, songId),
+        columns: { image: true },
+      });
+
+      // 3️⃣ Get next position (max + 1)
       const lastSong = await this.db
         .select({
           maxPosition: max(schema.playlistSongs.position),
@@ -146,12 +170,23 @@ export class PlaylistService {
 
       const nextPosition = (lastSong[0]?.maxPosition ?? -1) + 1;
 
-      // 3️⃣ Insert song
+      // 4️⃣ Insert song
       await this.db.insert(schema.playlistSongs).values({
         playlistId,
         songId,
         position: nextPosition,
       });
+
+      // 5️⃣ Update Playlist Thumbnail
+      if (song?.image) {
+        const currentThumbs = playlist.thumbnailUrl || [];
+        if (!currentThumbs.includes(song.image) && currentThumbs.length < 4) {
+          await this.db
+            .update(schema.playlist)
+            .set({ thumbnailUrl: [...currentThumbs, song.image] })
+            .where(eq(schema.playlist.id, playlistId));
+        }
+      }
 
       return {
         message: 'Song added to playlist',
@@ -172,11 +207,9 @@ export class PlaylistService {
     }
   }
 
-  async removeSongFromPlaylist(userId: string, dto: SongToPlaylistDto) {
+  async removeSongFromPlaylist(userId: string, playlistId: string, songId: string) {
     try {
-      const { playlistId, songId } = dto;
-
-      const playlist = await this.playlistRepository.returnPlaylistId(
+      const playlist = await this.playlistRepository.findByIdAndUserId(
         userId,
         playlistId,
       );
@@ -185,56 +218,89 @@ export class PlaylistService {
         throw new NotFoundException('Playlist not found');
       }
 
-      // 2️⃣ Get the song position (IMPORTANT)
-      const songEntry = await this.db.query.playlistSongs.findFirst({
-        where: and(
-          eq(schema.playlistSongs.playlistId, playlistId),
-          eq(schema.playlistSongs.songId, songId),
-        ),
-        columns: { position: true },
-      });
+      const result = await this.playlistRepository.removeSongFromPlaylist(playlistId, songId);
 
-      if (!songEntry) {
+      if (!result) {
         throw new NotFoundException('Song not found in playlist');
       }
-
-      const deletedPosition = songEntry.position;
-
-      // 3️⃣ Delete the song
-      await this.db
-        .delete(schema.playlistSongs)
-        .where(
-          and(
-            eq(schema.playlistSongs.playlistId, playlistId),
-            eq(schema.playlistSongs.songId, songId),
-            eq(schema.playlistSongs.position, deletedPosition),
-          ),
-        );
-
-      // 4️⃣ Shift remaining songs (IMPORTANT 🔥)
-      await this.db
-        .update(schema.playlistSongs)
-        .set({
-          position: sql`${schema.playlistSongs.position} - 1`,
-        })
-        .where(
-          and(
-            eq(schema.playlistSongs.playlistId, playlistId),
-            gt(schema.playlistSongs.position, deletedPosition),
-          ),
-        );
 
       return {
         message: 'Song removed from playlist',
       };
     } catch (error) {
-      console.log('error:', error);
-
       if (error instanceof NotFoundException) {
         throw error;
       }
-
+      console.log('error:', error);
       throw new InternalServerErrorException('Failed to remove song');
+    }
+  }
+  async deletePlaylist(userId: string, playlistId: string) {
+    try {
+      const playlist = await this.playlistRepository.findByIdAndUserId(userId, playlistId);
+      if (!playlist) {
+        throw new NotFoundException('Playlist not found');
+      }
+
+      if (playlist.isSystem) {
+        throw new BadRequestException('System playlists cannot be deleted');
+      }
+
+      const result = (await this.playlistRepository.deletePlaylist(userId, playlistId)) as any;
+
+      if (!result || result.length === 0) {
+        throw new NotFoundException('Playlist not found');
+      }
+
+      return {
+        message: 'Playlist deleted successfully',
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      console.log('error:', error);
+      throw new InternalServerErrorException('Failed to delete playlist');
+    }
+  }
+
+  async createFavoritesPlaylist(userId: string) {
+    // 1️⃣ Check if already exists
+    const existing = await this.db.query.playlist.findFirst({
+      where: and(
+        eq(schema.playlist.userId, userId),
+        eq(schema.playlist.isSystem, true),
+      ),
+    });
+
+    if (existing) return existing;
+
+    try {
+      // 2️⃣ Create playlist
+      const [newPlaylist] = (await this.db
+        .insert(schema.playlist)
+        .values({
+          name: 'Favorites',
+          userId,
+          isSystem: true,
+          isPublic: false,
+        })
+        .returning()) as any;
+
+      return newPlaylist;
+    } catch (err: any) {
+      // Handle race condition (duplicate creation)
+      // Re-fetch if another request already created it
+      const retry = await this.db.query.playlist.findFirst({
+        where: and(
+          eq(schema.playlist.userId, userId),
+          eq(schema.playlist.isSystem, true),
+        ),
+      });
+
+      if (retry) return retry;
+
+      throw err;
     }
   }
 }
