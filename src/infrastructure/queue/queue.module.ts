@@ -16,7 +16,7 @@ import {
       provide: REDIS_CONNECTION,
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
-        const url = configService.get<string>('REDIS_URL');
+        const url = configService.get<string>('redis.url');
 
         if (!url) {
           throw new Error('REDIS_URL is not defined');

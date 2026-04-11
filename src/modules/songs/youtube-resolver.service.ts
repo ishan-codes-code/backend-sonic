@@ -110,6 +110,7 @@ export class YoutubeResolverService {
               videoCategoryId: 10,
               q: `${query} official audio`,
             },
+            timeout: 5000,
           },
         ),
       );
@@ -170,7 +171,7 @@ export async function getYoutubeThumbnail(
   const maxresUrl = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
 
   try {
-    const res = await axios.head(maxresUrl);
+    const res = await axios.head(maxresUrl, { timeout: 5000 });
 
     if (res.status === 200) {
       return maxresUrl;
