@@ -4,6 +4,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
+import { ConfigService } from '@nestjs/config';
 import { lastValueFrom } from 'rxjs';
 import { normalizeString } from '../shared/utils/string.utils';
 
@@ -108,7 +109,10 @@ function extractArtistName(
 export class LastFmService {
   private readonly logger = new Logger(LastFmService.name);
 
-  constructor(private readonly httpService: HttpService) { }
+  constructor(
+    private readonly httpService: HttpService,
+    private readonly configService: ConfigService,
+  ) { }
 
   /** @deprecated Use shared normalizeString from shared/utils/string.utils instead */
   normalizeString(str: string): string {
@@ -120,7 +124,7 @@ export class LastFmService {
     artist: string,
     limit: number,
   ): Promise<LastFmTrackMetadata[]> {
-    const apiKey = process.env.LASTFM_API_KEY;
+    const apiKey = this.configService.get<string>('lastfm.apiKey');
     if (!apiKey) {
       throw new InternalServerErrorException(
         'LASTFM_API_KEY is not configured',
@@ -141,6 +145,7 @@ export class LastFmService {
             format: 'json',
             limit: safeLimit,
           },
+          timeout: 5000,
         },
       ),
     );
@@ -162,7 +167,7 @@ export class LastFmService {
   }
 
   async searchLastFmTracks(query: string): Promise<SearchTrackResult[]> {
-    const apiKey = process.env.LASTFM_API_KEY;
+    const apiKey = this.configService.get<string>('lastfm.apiKey');
     if (!apiKey) {
       throw new InternalServerErrorException(
         'LASTFM_API_KEY is not configured',
@@ -181,6 +186,7 @@ export class LastFmService {
               format: 'json',
               limit: 20,
             },
+            timeout: 5000,
           },
         ),
       );
@@ -227,7 +233,7 @@ export class LastFmService {
     tag: string,
     limit: number,
   ): Promise<LastFmTrackMetadata[]> {
-    const apiKey = process.env.LASTFM_API_KEY;
+    const apiKey = this.configService.get<string>('lastfm.apiKey');
     if (!apiKey) {
       throw new InternalServerErrorException(
         'LASTFM_API_KEY is not configured',
@@ -248,6 +254,7 @@ export class LastFmService {
               format: 'json',
               limit: safeLimit,
             },
+            timeout: 5000,
           },
         ),
       );

@@ -27,7 +27,10 @@ export class SongWorkerService implements OnModuleInit, OnApplicationShutdown {
     this.worker = new Worker(
       SONGS_QUEUE_NAME,
       async (job) => this.songProcessorService.handle(job),
-      { connection: workerConnection },
+      {
+        connection: workerConnection,
+        concurrency: 1,
+      },
     );
 
     this.worker.on('completed', (job) => {

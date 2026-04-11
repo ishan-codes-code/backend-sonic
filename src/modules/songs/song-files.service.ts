@@ -24,8 +24,19 @@ export class SongFilesService implements OnModuleInit {
 
   async onModuleInit() {
     const isWindows = os.platform() === 'win32';
-    const binaryName = isWindows ? 'yt-dlp.exe' : 'yt-dlp';
-    const binaryPath = path.join(process.cwd(), binaryName);
+
+    // 1️⃣ Check if yt-dlp is already in the system path (e.g. Docker)
+    let binaryPath = '';
+    try {
+      const { execSync } = require('child_process');
+      const cmd = isWindows ? 'where yt-dlp' : 'which yt-dlp';
+      binaryPath = execSync(cmd).toString().trim();
+      console.log(`Using system yt-dlp found at: ${binaryPath}`);
+    } catch (err) {
+      // Not in path, fallback to local binary
+      const binaryName = isWindows ? 'yt-dlp.exe' : 'yt-dlp';
+      binaryPath = path.join(process.cwd(), binaryName);
+    }
 
     if (!fs.existsSync(binaryPath)) {
       console.log('Downloading yt-dlp binary...');
