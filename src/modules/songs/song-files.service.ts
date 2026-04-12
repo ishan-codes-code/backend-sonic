@@ -72,8 +72,6 @@ export class SongFilesService implements OnModuleInit {
       ffmpegStatic,
       '--no-check-certificate',
       '-4',
-      '--js-runtimes',
-      'node',
       '--cache-dir',
       os.tmpdir(),
       '--extractor-args',
