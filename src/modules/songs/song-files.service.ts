@@ -69,8 +69,7 @@ export class SongFilesService implements OnModuleInit {
       '--no-check-certificate',
       '-4',
       '--cache-dir', os.tmpdir(),
-      '--extractor-args', 'youtube:player_client=web',
-      '--cookies', '/app/cookies.txt',
+      '--extractor-args', 'youtube:player_client=tv_embedded',
       '-o', tempFilePath,
     ];
 
