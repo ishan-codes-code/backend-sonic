@@ -69,10 +69,12 @@ export class SongFilesService implements OnModuleInit {
       '--no-check-certificate',
       '-4',
       '--cache-dir', os.tmpdir(),
-      '--extractor-args', 'youtube:player_client=tv_embedded',
+      '--extractor-args', 'youtube:player_client=web',
+      '--js-runtimes', 'node',
+      '--remote-components', 'ejs:github',
+      '--cookies', '/app/cookies.txt',
       '-o', tempFilePath,
     ];
-
     console.log(`Starting download for ${videoId} to ${finalPath}...`);
 
     try {
