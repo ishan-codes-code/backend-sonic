@@ -75,7 +75,11 @@ export class SongFilesService implements OnModuleInit {
       '--cache-dir',
       os.tmpdir(),
       '--extractor-args',
-      'youtube:player_client=android,web',
+      'youtube:player_client=ios,android',
+      '--add-header',
+      'User-Agent:com.google.ios.youtube/19.29.1 CFNetwork/1408.0.4 Darwin/22.5.0',
+      '--cookies',
+      '/app/cookies.txt',
       '-o',
       tempFilePath,
     ];

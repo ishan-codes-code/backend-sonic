@@ -1,4 +1,4 @@
-FROM node:20-bullseye
+FROM node:20-bookworm
 
 # Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
@@ -13,14 +13,15 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     && rm -rf /var/lib/apt/lists/*
 
-# Install yt-dlp
-RUN pip3 install --no-cache-dir yt-dlp
+# Install yt-dlp (Always get latest version)
+RUN pip3 install -U yt-dlp
 
 # Set working directory
 WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
+COPY cookies.txt /app/cookies.txt
 
 # Install dependencies
 RUN npm install
