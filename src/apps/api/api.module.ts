@@ -25,7 +25,7 @@ import { DiscoveryModule } from '../../modules/discovery/discovery.module';
     ThrottlerModule.forRoot([
       {
         ttl: 60000,
-        limit: 10,
+        limit: 60,
       },
     ]),
     DatabaseModule,

@@ -53,7 +53,6 @@ export class RecommendationService {
 
       this.cache.set(cacheKey, { expiresAt: now + this.cacheTtlMs, results });
 
-      console.log(JSON.stringify(results, null, 2));
 
       return results.slice(0, safeLimit);
     } catch (error: unknown) {
