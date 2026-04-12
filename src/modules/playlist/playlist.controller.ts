@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
-import { GetCurrentUser } from 'src/infrastructure/common/decorators/get-current-user.decorator';
-import { JwtAuthGuard } from 'src/infrastructure/common/guards/jwt-auth.guard';
+import { GetCurrentUser } from '../../infrastructure/common/decorators/get-current-user.decorator';
+import { JwtAuthGuard } from '../../infrastructure/common/guards/jwt-auth.guard';
 import { CreatePlaylistDto } from './dto/createPlaylist.dto';
 import { PlaylistService } from './playlist.service';
 import { AddSongToPlaylistDto } from './dto/addSongToPlaylist.dto';

@@ -9,10 +9,10 @@ import { AuthModule } from '../../modules/auth/auth.module';
 import { SongsApiModule } from '../../modules/songs/songs-api.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { PlaylistModule } from 'src/modules/playlist/playlist.module';
-import { RecommendationModule } from 'src/modules/recommendation/recommendation.module';
-import { SearchModule } from 'src/modules/search/search.module';
-import { DiscoveryModule } from 'src/modules/discovery/discovery.module';
+import { PlaylistModule } from '../../modules/playlist/playlist.module';
+import { RecommendationModule } from '../../modules/recommendation/recommendation.module';
+import { SearchModule } from '../../modules/search/search.module';
+import { DiscoveryModule } from '../../modules/discovery/discovery.module';
 
 
 

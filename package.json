@@ -54,6 +54,7 @@
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "ws": "^8.20.0",
     "yt-dlp-wrap": "^2.3.12"
   },
   "devDependencies": {
@@ -69,6 +70,7 @@
     "@types/node": "^22.10.7",
     "@types/passport-jwt": "^4.0.1",
     "@types/supertest": "^6.0.2",
+    "@types/ws": "^8.18.1",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",

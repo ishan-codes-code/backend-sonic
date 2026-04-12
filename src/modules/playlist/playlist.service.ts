@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { CreatePlaylistDto } from './dto/createPlaylist.dto';
-import { DRIZZLE_PROVIDER } from 'src/infrastructure/database/database.module';
+import { DRIZZLE_PROVIDER } from '../../infrastructure/database/database.module';
 import { NeonHttpDatabase } from 'drizzle-orm/neon-http';
 import * as schema from '../../infrastructure/database/schema';
 import { and, asc, desc, eq, gt } from 'drizzle-orm';

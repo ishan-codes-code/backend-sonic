@@ -1,5 +1,5 @@
 import { InferSelectModel } from 'drizzle-orm';
-import { songs } from 'src/infrastructure/database/schema';
+import { songs } from '../../../infrastructure/database/schema';
 
 export type Song = InferSelectModel<typeof songs>;
 

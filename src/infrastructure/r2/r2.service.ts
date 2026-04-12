@@ -3,12 +3,10 @@ import {
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
-import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
-import { Readable } from 'stream';
 
 @Injectable()
 export class R2Service {
@@ -27,25 +25,21 @@ export class R2Service {
     });
   }
 
-  async uploadStream(stream: Readable, filename: string) {
+  async uploadFileBuffer(buffer: Buffer, filename: string) {
     const key = `songs/${filename}`;
 
     try {
-      const upload = new Upload({
-        client: this.s3,
-        params: {
-          Bucket: this.bucketName,
-          Key: key,
-          Body: stream,
-          ContentType: 'audio/mpeg',
-        },
+      const command = new PutObjectCommand({
+        Bucket: this.bucketName,
+        Key: key,
+        Body: buffer,
+        ContentType: 'audio/mp4',
       });
 
-      await upload.done();
+      await this.s3.send(command);
       return key;
     } catch (err) {
       console.error('R2 upload failed:', err);
-      stream.destroy();
       throw new Error('R2 upload failed');
     }
   }

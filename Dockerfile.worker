@@ -1,12 +1,20 @@
-FROM node:18-bullseye
+FROM node:20-bullseye
 
-# Install system dependencies
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install dependencies
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     python3 \
     python3-pip \
-    && pip3 install yt-dlp \
+    ca-certificates \
+    curl \
+    gnupg \
     && rm -rf /var/lib/apt/lists/*
+
+# Install yt-dlp
+RUN pip3 install --no-cache-dir yt-dlp
 
 # Set working directory
 WORKDIR /app
@@ -17,10 +25,10 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install
 
-# Copy source code
+# Copy source
 COPY . .
 
-# Build NestJS project
+# Build app
 RUN npm run build
 
 # Start worker

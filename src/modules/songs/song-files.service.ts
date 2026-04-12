@@ -76,6 +76,8 @@ export class SongFilesService implements OnModuleInit {
       'node',
       '--cache-dir',
       os.tmpdir(),
+      '--extractor-args',
+      'youtube:player_client=android,web',
       '-o',
       tempFilePath,
     ];
@@ -94,10 +96,9 @@ export class SongFilesService implements OnModuleInit {
 
       console.log(`Extraction complete. Uploading ${finalPath} to R2...`);
 
-      // Create a read stream from the finished file
-      const fileStream = fs.createReadStream(finalPath);
-
-      const key = await this.r2Service.uploadStream(fileStream, filename);
+      // Read the file into a buffer to avoid Stream/Multipart Cloudflare 502 bugs
+      const fileBuffer = fs.readFileSync(finalPath);
+      const key = await this.r2Service.uploadFileBuffer(fileBuffer, filename);
 
       // Cleanup the temporary file
       await fs
