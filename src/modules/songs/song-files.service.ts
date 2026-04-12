@@ -61,27 +61,17 @@ export class SongFilesService implements OnModuleInit {
 
     const ytDlpArgs = [
       url,
-      '-f',
-      'ba/b',
+      '-f', 'ba/b',
       '-x',
-      '--audio-format',
-      'aac',
-      '--audio-quality',
-      '128K',
-      '--ffmpeg-location',
-      ffmpegStatic,
+      '--audio-format', 'aac',
+      '--audio-quality', '128K',
+      '--ffmpeg-location', ffmpegStatic,
       '--no-check-certificate',
       '-4',
-      '--cache-dir',
-      os.tmpdir(),
-      '--extractor-args',
-      'youtube:player_client=ios,android',
-      '--add-header',
-      'User-Agent:com.google.ios.youtube/19.29.1 CFNetwork/1408.0.4 Darwin/22.5.0',
-      '--cookies',
-      '/app/cookies.txt',
-      '-o',
-      tempFilePath,
+      '--cache-dir', os.tmpdir(),
+      '--extractor-args', 'youtube:player_client=web',
+      '--cookies', '/app/cookies.txt',
+      '-o', tempFilePath,
     ];
 
     console.log(`Starting download for ${videoId} to ${finalPath}...`);
@@ -117,7 +107,7 @@ export class SongFilesService implements OnModuleInit {
 
       // Attempt cleanup if file exists
       if (fs.existsSync(finalPath)) {
-        await fs.remove(finalPath).catch(() => {});
+        await fs.remove(finalPath).catch(() => { });
       }
 
       throw new HttpException(
