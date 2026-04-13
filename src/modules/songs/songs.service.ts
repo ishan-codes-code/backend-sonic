@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { PlaySongDto } from './dto/song.dto';
 import { PlayResponseDto, ResolvedPlayableSong } from './dto/play-response.dto';
 import { SongCatalogService } from './song-catalog.service';
@@ -86,6 +86,12 @@ export class SongsService {
     if (existing) {
       return { type: 'existing', song: existing };
     }
+
+    // 🛡️ Shield: Check if this specific query has failed before to save YouTube Quota
+    await this.songJobsService.checkFailedJobByNames(
+      normalizedTrackName,
+      normalizedArtistName,
+    );
 
     // Path C: resolve via YouTube, then insert stub record
     const ytSong = await this.youtubeResolverService.resolveFromTrackAndArtist(

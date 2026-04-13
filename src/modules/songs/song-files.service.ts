@@ -13,6 +13,8 @@ import { R2Service } from '../../infrastructure/r2/r2.service';
 const YTDlpWrap = require('yt-dlp-wrap').default;
 const ffmpegStatic = require('ffmpeg-static');
 
+const MAX_SONG_DURATION_SECONDS = 600;
+
 @Injectable()
 export class SongFilesService implements OnModuleInit {
   private readonly uploadsDir = path.join(process.cwd(), 'uploads');
@@ -52,6 +54,7 @@ export class SongFilesService implements OnModuleInit {
 
   async downloadAudio(videoId: string) {
     const url = `https://www.youtube.com/watch?v=${videoId}`;
+
     // const filename = `${videoId}-${Date.now()}.m4a`
     const filename = `${videoId}.m4a`;
 
@@ -86,6 +89,16 @@ export class SongFilesService implements OnModuleInit {
       }
 
       const duration = await this.extractDurationInSeconds(finalPath);
+
+      // 🛡️ Layer 4: Post-download Safety Net
+      if (duration > MAX_SONG_DURATION_SECONDS) {
+        console.warn(
+          `[Layer 4] Audio too long for ${videoId}: ${duration}s. Rejecting...`,
+        );
+        throw new Error(
+          `The processed audio duration (${duration}s) exceeds the maximum allowed limit of ${MAX_SONG_DURATION_SECONDS}s.`,
+        );
+      }
 
       console.log(`Extraction complete. Uploading ${finalPath} to R2...`);
 
