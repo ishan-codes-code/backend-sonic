@@ -55,57 +55,6 @@ export class SongFilesService implements OnModuleInit {
   async downloadAudio(videoId: string) {
     const url = `https://www.youtube.com/watch?v=${videoId}`;
 
-    // 🛡️ Layer 3: yt-dlp Metadata Check (Pre-download)
-    let metadataDurationString = '';
-    const metadataArgs = [
-      url,
-      '--print',
-      'duration_string',
-      '--simulate',
-      '--no-check-certificate',
-      '-4',
-      '--extractor-args',
-      'youtube:player_client=web',
-      '--js-runtimes',
-      'node',
-      '--remote-components',
-      'ejs:github',
-      '--cookies',
-      '/app/cookies.txt',
-    ];
-
-    try {
-      const subprocess = this.ytDlpWrap.exec(metadataArgs);
-      await new Promise<void>((resolve, reject) => {
-        subprocess.on('stdout', (data: string) => (metadataDurationString += data));
-        subprocess.on('error', (err: Error) => reject(err));
-        subprocess.on('close', () => resolve());
-      });
-
-      const metadataDuration = this.parseDurationString(
-        metadataDurationString.trim(),
-      );
-      console.log(
-        `[Layer 3] Metadata duration check for ${videoId}: ${metadataDurationString.trim()} (${metadataDuration}s)`,
-      );
-
-      if (metadataDuration > MAX_SONG_DURATION_SECONDS) {
-        throw new HttpException(
-          `Video is too long (${metadataDurationString.trim()}). Maximum allowed duration is ${MAX_SONG_DURATION_SECONDS / 60} minutes.`,
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-    } catch (err: any) {
-      if (err instanceof HttpException) throw err;
-      console.error(
-        `[Layer 3] Metadata check failed for ${videoId}:`,
-        err.message,
-      );
-      throw new HttpException(
-        `Failed to verify video duration: ${err.message}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
     // const filename = `${videoId}-${Date.now()}.m4a`
     const filename = `${videoId}.m4a`;
 
@@ -212,20 +161,5 @@ export class SongFilesService implements OnModuleInit {
         resolve(Math.round(hours * 3600 + minutes * 60 + seconds));
       });
     });
-  }
-
-  private parseDurationString(durationStr: string): number {
-    if (!durationStr) return 0;
-    const parts = durationStr.split(':').reverse();
-    let totalSeconds = 0;
-
-    // Seconds
-    if (parts[0]) totalSeconds += parseInt(parts[0], 10);
-    // Minutes
-    if (parts[1]) totalSeconds += parseInt(parts[1], 10) * 60;
-    // Hours
-    if (parts[2]) totalSeconds += parseInt(parts[2], 10) * 3600;
-
-    return totalSeconds;
   }
 }
