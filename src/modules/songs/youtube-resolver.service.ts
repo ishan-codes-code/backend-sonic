@@ -40,9 +40,14 @@ export interface ResolvedYoutubeSong {
 export class YoutubeResolverService {
   private readonly logger = new Logger(YoutubeResolverService.name);
 
+  // 🛡️ Deduplication: Store in-flight promises to prevent multiple calls for same song
+  private resolvingRequests = new Map<string, Promise<ResolvedYoutubeSong>>();
+
+  // 🔒 Quota state: if true, we stick to the backup key
+  private useBackup = false;
+  private lastQuotaReset = Date.now();
+
   constructor(private readonly httpService: HttpService) { }
-
-
 
   private scoreVideo(item: YoutubeSearchItem, normalizedArtist: string): number {
     const title = item.snippet?.title?.toLowerCase() ?? '';
@@ -82,28 +87,116 @@ export class YoutubeResolverService {
     return score;
   }
 
+  private getApiKey(): string {
+    const isDev = process.env.NODE_ENV === 'development';
 
+    if (isDev && process.env.YOUTUBE_API_KEY_DEV) {
+      return process.env.YOUTUBE_API_KEY_DEV;
+    }
+
+    // 🕒 Auto-reset logic: Check if 24 hours passed since we switched to backup
+    const twentyFourHours = 24 * 60 * 60 * 1000;
+    if (this.useBackup && Date.now() - this.lastQuotaReset > twentyFourHours) {
+      this.logger.log('Resetting YouTube API key to primary (24h passed)');
+      this.useBackup = false;
+    }
+
+    if (this.useBackup && process.env.YOUTUBE_API_KEY_BACKUP) {
+      this.logger.warn('Using BACKUP API key (Quota exceeded fallback active)');
+      return process.env.YOUTUBE_API_KEY_BACKUP;
+    }
+
+    return (
+      process.env.YOUTUBE_API_KEY_PROD ||
+      process.env.YOUTUBE_API_KEY ||
+      ''
+    );
+  }
+
+  private isQuotaError(error: any): boolean {
+    const reason = error?.response?.data?.error?.errors?.[0]?.reason;
+    return reason === 'quotaExceeded' || reason === 'dailyLimitExceeded';
+  }
+
+  /**
+   * 📉 Check if all production keys are likely exhausted
+   */
+  public isQuotaExhausted(): boolean {
+    if (!this.useBackup) return false;
+
+    // If we are on backup, check if the 24h cooldown is still active
+    const twentyFourHours = 24 * 60 * 60 * 1000;
+    return Date.now() - this.lastQuotaReset < twentyFourHours;
+  }
 
   async resolveFromTrackAndArtist(
     trackName: string,
     artistName: string,
   ): Promise<ResolvedYoutubeSong> {
-    const youtubeApiKey = process.env.YOUTUBE_API_KEY;
-    if (!youtubeApiKey) {
-      throw new InternalServerErrorException('YOUTUBE_API_KEY is not configured');
+    const cacheKey = `${trackName}:${artistName}`.toLowerCase().trim();
+
+    // ── STEP 1: Deduplication ──────────────────────────────────────────
+    // If we are already resolving this exact song right now, wait for that promise
+    if (this.resolvingRequests.has(cacheKey)) {
+      this.logger.log(`Deduplicating in-flight request for: ${cacheKey}`);
+      return this.resolvingRequests.get(cacheKey)!;
     }
 
+    const resolutionPromise = (async () => {
+      try {
+        return await this.performResolution(trackName, artistName);
+      } finally {
+        // Clean up map once done
+        this.resolvingRequests.delete(cacheKey);
+      }
+    })();
+
+    this.resolvingRequests.set(cacheKey, resolutionPromise);
+    return resolutionPromise;
+  }
+
+  private async performResolution(
+    trackName: string,
+    artistName: string,
+  ): Promise<ResolvedYoutubeSong> {
     const normalizedTrackName = normalizeString(trackName);
     const normalizedArtistName = normalizeString(artistName);
     const query = `${trackName} ${artistName}`;
 
     try {
-      const response = await lastValueFrom(
+      return await this.fetchWithRetry(query, normalizedTrackName, normalizedArtistName);
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+
+      if (this.isQuotaError(error)) {
+        this.logger.error('CRITICAL: All YouTube API Quotas exhausted!');
+        throw new HttpException(
+          'Music resolution service is currently at capacity. Please try again tomorrow.',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+
+      this.logger.error('YouTube resolution failed', error);
+      throw new InternalServerErrorException(
+        'Failed to resolve YouTube video for playback',
+      );
+    }
+  }
+
+  private async fetchWithRetry(
+    query: string,
+    normalizedTrackName: string,
+    normalizedArtistName: string,
+  ): Promise<ResolvedYoutubeSong> {
+    let currentKey = this.getApiKey();
+
+    const fetchTask = async (key: string) => {
+      return await lastValueFrom(
         this.httpService.get<YoutubeSearchResponse>(
           'https://www.googleapis.com/youtube/v3/search',
           {
             params: {
-              key: youtubeApiKey,
+              key,
               part: 'snippet',
               type: 'video',
               maxResults: 5,
@@ -114,53 +207,72 @@ export class YoutubeResolverService {
           },
         ),
       );
+    };
 
-      const items = (response.data.items ?? []).filter(
-        (item) => item.id?.videoId && item.snippet?.title,
-      );
-
-      if (items.length === 0) {
-        throw new HttpException(
-          'No playable YouTube match found for this song',
-          HttpStatus.NOT_FOUND,
-        );
-      }
-
-      const bestMatch = items
-        .map((item) => ({
-          item,
-          score: this.scoreVideo(item, normalizedArtistName),
-        }))
-        .sort((a, b) => b.score - a.score)[0]?.item;
-
-      if (!bestMatch?.id?.videoId || !bestMatch.snippet?.title) {
-        throw new HttpException(
-          'No playable YouTube match found for this song',
-          HttpStatus.NOT_FOUND,
-        );
-      }
-
-      return {
-        youtubeId: bestMatch.id.videoId,
-        youtubeTitle: bestMatch.snippet.title.trim(),
-        normalizedTrackName,
-        normalizedArtistName,
-        image: await getYoutubeThumbnail(
-          bestMatch.id.videoId,
-          bestMatch.snippet.thumbnails?.high?.url ??
-          bestMatch.snippet.thumbnails?.medium?.url ??
-          bestMatch.snippet.thumbnails?.default?.url ??
-          null,
-        ),
-
-      };
+    try {
+      const response = await fetchTask(currentKey);
+      return this.processYoutubeResponse(response.data, normalizedTrackName, normalizedArtistName);
     } catch (error) {
-      if (error instanceof HttpException) throw error;
-      this.logger.error('YouTube resolution failed', error);
-      throw new InternalServerErrorException(
-        'Failed to resolve YouTube video for playback',
+      // 🔄 Fallback Logic
+      if (this.isQuotaError(error) && !this.useBackup) {
+        this.logger.warn('Primary YouTube Quota hit! Attempting fallback to BACKUP key.');
+        this.useBackup = true;
+        this.lastQuotaReset = Date.now(); // Track when we switched
+        const backupKey = process.env.YOUTUBE_API_KEY_BACKUP;
+
+        if (backupKey) {
+          const response = await fetchTask(backupKey);
+          return this.processYoutubeResponse(response.data, normalizedTrackName, normalizedArtistName);
+        }
+      }
+
+      throw error;
+    }
+  }
+
+  private async processYoutubeResponse(
+    data: YoutubeSearchResponse,
+    normalizedTrackName: string,
+    normalizedArtistName: string,
+  ): Promise<ResolvedYoutubeSong> {
+    const items = (data.items ?? []).filter(
+      (item) => item.id?.videoId && item.snippet?.title,
+    );
+
+    if (items.length === 0) {
+      throw new HttpException(
+        'No playable YouTube match found for this song',
+        HttpStatus.NOT_FOUND,
       );
     }
+
+    const bestMatch = items
+      .map((item) => ({
+        item,
+        score: this.scoreVideo(item, normalizedArtistName),
+      }))
+      .sort((a, b) => b.score - a.score)[0]?.item;
+
+    if (!bestMatch?.id?.videoId || !bestMatch.snippet?.title) {
+      throw new HttpException(
+        'No playable YouTube match found for this song',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    return {
+      youtubeId: bestMatch.id.videoId,
+      youtubeTitle: bestMatch.snippet.title.trim(),
+      normalizedTrackName,
+      normalizedArtistName,
+      image: await getYoutubeThumbnail(
+        bestMatch.id.videoId,
+        bestMatch.snippet.thumbnails?.high?.url ??
+        bestMatch.snippet.thumbnails?.medium?.url ??
+        bestMatch.snippet.thumbnails?.default?.url ??
+        null,
+      ),
+    };
   }
 }
 
