@@ -8,7 +8,17 @@ async function bootstrap() {
   const app = await NestFactory.create(ApiModule);
 
   app.use(helmet());
-  app.enableCors();
+
+  const allowedOrigins = process.env.API_CORS_ORIGIN
+    ? process.env.API_CORS_ORIGIN.split(',').map((origin) => origin.trim())
+    : undefined;
+
+  app.enableCors({
+    origin: allowedOrigins,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+  });
 
   app.useGlobalFilters(new AllExceptionsFilter());
 

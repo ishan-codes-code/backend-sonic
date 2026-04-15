@@ -62,21 +62,33 @@ export class SongFilesService implements OnModuleInit {
     const tempFilePath = path.join(os.tmpdir(), `${videoId}-${Date.now()}`);
     const finalPath = `${tempFilePath}.m4a`;
 
+    const ytDlpCookiesPath =
+      process.env.YTDLP_COOKIES_PATH ?? path.join(process.cwd(), 'cookies.txt');
     const ytDlpArgs = [
       url,
-      '-f', 'ba/b',
+      '-f',
+      'ba/b',
       '-x',
-      '--audio-format', 'aac',
-      '--audio-quality', '128K',
-      '--ffmpeg-location', ffmpegStatic,
+      '--audio-format',
+      'aac',
+      '--audio-quality',
+      '128K',
+      '--ffmpeg-location',
+      ffmpegStatic,
       '--no-check-certificate',
       '-4',
-      '--cache-dir', os.tmpdir(),
-      '--extractor-args', 'youtube:player_client=web',
-      '--js-runtimes', 'node',
-      '--remote-components', 'ejs:github',
-      '--cookies', '/app/cookies.txt',
-      '-o', tempFilePath,
+      '--cache-dir',
+      os.tmpdir(),
+      '--extractor-args',
+      'youtube:player_client=web',
+      '--js-runtimes',
+      'node',
+      '--remote-components',
+      'ejs:github',
+      '--cookies',
+      ytDlpCookiesPath,
+      '-o',
+      tempFilePath,
     ];
     console.log(`Starting download for ${videoId} to ${finalPath}...`);
 
@@ -121,7 +133,7 @@ export class SongFilesService implements OnModuleInit {
 
       // Attempt cleanup if file exists
       if (fs.existsSync(finalPath)) {
-        await fs.remove(finalPath).catch(() => { });
+        await fs.remove(finalPath).catch(() => {});
       }
 
       throw new HttpException(
