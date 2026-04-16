@@ -1,4 +1,3 @@
-import axios from 'axios';
 import {
   HttpStatus,
   Injectable,
@@ -265,7 +264,7 @@ export class YoutubeResolverService {
       youtubeTitle: bestMatch.snippet.title.trim(),
       normalizedTrackName,
       normalizedArtistName,
-      image: await getYoutubeThumbnail(
+      image: await this.getYoutubeThumbnail(
         bestMatch.id.videoId,
         bestMatch.snippet.thumbnails?.high?.url ??
         bestMatch.snippet.thumbnails?.medium?.url ??
@@ -274,23 +273,25 @@ export class YoutubeResolverService {
       ),
     };
   }
-}
 
-export async function getYoutubeThumbnail(
-  videoId: string,
-  fallback: string | null,
-): Promise<string | null> {
-  const maxresUrl = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+  private async getYoutubeThumbnail(
+    videoId: string,
+    fallback: string | null,
+  ): Promise<string | null> {
+    const maxresUrl = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
 
-  try {
-    const res = await axios.head(maxresUrl, { timeout: 5000 });
+    try {
+      const response = await lastValueFrom(
+        this.httpService.head(maxresUrl, { timeout: 5000 }),
+      );
 
-    if (res.status === 200) {
-      return maxresUrl;
+      if (response.status === 200) {
+        return maxresUrl;
+      }
+    } catch {
+      // maxres not available
     }
-  } catch (err) {
-    // maxres not available
-  }
 
-  return fallback;
+    return fallback;
+  }
 }

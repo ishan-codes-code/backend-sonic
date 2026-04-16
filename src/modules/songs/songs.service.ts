@@ -16,7 +16,7 @@ export class SongsService {
     private readonly songJobsService: SongJobsService,
     private readonly songStreamService: SongStreamService,
     private readonly youtubeResolverService: YoutubeResolverService,
-  ) { }
+  ) {}
 
   async play(dto: PlaySongDto): Promise<PlayResponseDto> {
     const resolved = await this.resolvePlayableSong(dto);
@@ -31,7 +31,9 @@ export class SongsService {
       const song = resolved.song;
 
       // Note: r2Key is non-nullable in schema; if record exists, it has a key.
-      const streamUrl = await this.songStreamService.tryGetStreamUrl(song.r2Key);
+      const streamUrl = await this.songStreamService.tryGetStreamUrl(
+        song.r2Key,
+      );
 
       if (streamUrl) {
         return { type: 'ready', streamUrl, song };
@@ -49,18 +51,17 @@ export class SongsService {
         image: song.image ?? undefined,
       });
 
-      return { type: 'job', jobId: job.id! };
+      return { type: 'job', jobId: job.youtubeId };
     }
 
     // ── CASE 3: Newly resolved from YouTube ─────────────────────────────────
     if (resolved.type === 'resolved') {
       const job = await this.songJobsService.createProcessJob(resolved.data);
-      return { type: 'job', jobId: job.id! };
+      return { type: 'job', jobId: job.youtubeId };
     }
 
     throw new Error('Invalid play state');
   }
-
 
   async getJobStatus(jobId: string) {
     return this.songJobsService.getJobStatus(jobId);
@@ -68,7 +69,9 @@ export class SongsService {
 
   // ─── Private helpers ─────────────────────────────────────────────────────
 
-  private async resolvePlayableSong(dto: PlaySongDto): Promise<ResolvedPlayableSong> {
+  private async resolvePlayableSong(
+    dto: PlaySongDto,
+  ): Promise<ResolvedPlayableSong> {
     // Path A: direct songId lookup
     if (dto.songId) {
       return { type: 'songId', songId: dto.songId };
@@ -100,7 +103,9 @@ export class SongsService {
     );
 
     // Dedup by youtubeId before inserting
-    const existingByYtId = await this.songCatalogService.findByYoutubeId(ytSong.youtubeId);
+    const existingByYtId = await this.songCatalogService.findByYoutubeId(
+      ytSong.youtubeId,
+    );
     if (existingByYtId) {
       return { type: 'existing', song: existingByYtId };
     }
@@ -117,6 +122,5 @@ export class SongsService {
         image: ytSong.image ?? undefined,
       },
     };
-
   }
 }

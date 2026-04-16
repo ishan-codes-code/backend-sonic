@@ -1,6 +1,5 @@
 import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
-import { QueueModule } from '../../infrastructure/queue/queue.module';
 import { R2Module } from '../../infrastructure/r2/r2.module';
 import { SongCatalogService } from './song-catalog.service';
 
@@ -10,7 +9,7 @@ import { SongsService } from './songs.service';
 import { YoutubeResolverService } from './youtube-resolver.service';
 
 @Module({
-  imports: [HttpModule, R2Module, QueueModule],
+  imports: [HttpModule, R2Module],
   providers: [
     SongsService,
     SongCatalogService,
@@ -26,4 +25,4 @@ import { YoutubeResolverService } from './youtube-resolver.service';
     YoutubeResolverService,
   ],
 })
-export class SongsModule { }
+export class SongsModule {}
