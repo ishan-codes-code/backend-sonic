@@ -127,6 +127,20 @@
       "when": 1775941773974,
       "tag": "0017_opposite_talon",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1776466423936,
+      "tag": "0018_loving_talkback",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1776468047746,
+      "tag": "0019_jittery_ken_ellis",
+      "breakpoints": true
     }
   ]
 }

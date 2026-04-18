@@ -3,6 +3,7 @@ import { SongCatalogService } from '../../../modules/songs/song-catalog.service'
 import { SongFilesService } from '../../../modules/songs/song-files.service';
 import { SongStreamService } from '../../../modules/songs/song-stream.service';
 import { ProcessJobData } from '../../../modules/songs/song-jobs.service';
+import { ArtistService } from '../../../modules/songs/artist.service';
 
 @Injectable()
 export class SongProcessorService {
@@ -10,12 +11,13 @@ export class SongProcessorService {
   private readonly processingJobs = new Set<string>();
   private readonly failedJobs = new Set<string>();
   private readonly MAX_CONCURRENT = 1;
-  private readonly JOB_TIMEOUT_MS = 60_000;
+  private readonly JOB_TIMEOUT_MS = 1_80_000;
 
   constructor(
     private readonly songFilesService: SongFilesService,
     private readonly songCatalogService: SongCatalogService,
     private readonly songStreamService: SongStreamService,
+    private readonly artistService: ArtistService,
   ) {}
 
   isBusy(youtubeId: string): boolean {
@@ -112,9 +114,7 @@ export class SongProcessorService {
       song = await this.songCatalogService.create({
         youtubeId,
         trackName: data.trackName,
-        artistName: data.artistName,
         normalizedTrackName: data.normalizedTrackName,
-        normalizedArtistName: data.normalizedArtistName,
         youtubeTitle: data.youtubeTitle,
         image: data.image ?? null,
         r2Key: result.r2Key,
@@ -130,6 +130,11 @@ export class SongProcessorService {
       } else {
         throw err;
       }
+    }
+
+    // Phase 4 Dual-Write: Link artists to the song in the new relational tables
+    if (song) {
+      await this.artistService.linkArtistsToSong(song.id, data.artistName);
     }
 
     if (!song) {

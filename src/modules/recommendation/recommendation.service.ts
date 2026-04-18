@@ -33,11 +33,12 @@ export class RecommendationService {
 
   async getRecommendations(
     title: string,
-    artist: string,
+    artists: { id?: string; name: string; normalizedName: string }[],
     limit: number,
   ): Promise<RecommendationTrack[]> {
     const safeLimit = this.normalizeLimit(limit);
-    const cacheKey = `${normalizeString(title)}_${normalizeString(artist)}`;
+    const artistsKey = artists.map(a => a.normalizedName).join('_');
+    const cacheKey = `${normalizeString(title)}_${artistsKey}`;
     const now = Date.now();
 
     const cached = this.cache.get(cacheKey);
@@ -56,11 +57,20 @@ export class RecommendationService {
       // Otherwise, keep it standard to save Last.fm resources.
       const fetchLimit = isQuotaExhausted ? 50 : Math.max(10, safeLimit);
 
-      const rawTracks = await this.lastFmService.getSimilarTracks(
-        title,
-        artist,
-        fetchLimit,
-      );
+      let rawTracks: LastFmTrackMetadata[] = [];
+      
+      // Fetch using artists[0], if empty try artists[1], etc.
+      for (const artist of artists) {
+        rawTracks = await this.lastFmService.getSimilarTracks(
+          title,
+          artist.name,
+          fetchLimit,
+        );
+        
+        if (rawTracks.length > 0) {
+          break;
+        }
+      }
 
       let results = this.sanitize(rawTracks, fetchLimit);
 
@@ -88,7 +98,8 @@ export class RecommendationService {
       return results.slice(0, safeLimit);
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Recommendations failed for "${title}" by "${artist}": ${msg}`);
+      const artistNames = artists.map(a => a.name).join(', ');
+      this.logger.error(`Recommendations failed for "${title}" by "${artistNames}": ${msg}`);
       return [];
     }
   }

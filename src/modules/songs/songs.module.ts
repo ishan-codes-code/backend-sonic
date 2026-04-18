@@ -6,6 +6,7 @@ import { SongCatalogService } from './song-catalog.service';
 import { SongJobsService } from './song-jobs.service';
 import { SongStreamService } from './song-stream.service';
 import { SongsService } from './songs.service';
+import { ArtistService } from './artist.service';
 import { YoutubeResolverService } from './youtube-resolver.service';
 
 @Module({
@@ -15,6 +16,7 @@ import { YoutubeResolverService } from './youtube-resolver.service';
     SongCatalogService,
     SongJobsService,
     SongStreamService,
+    ArtistService,
     YoutubeResolverService,
   ],
   exports: [
@@ -22,6 +24,7 @@ import { YoutubeResolverService } from './youtube-resolver.service';
     SongCatalogService,
     SongJobsService,
     SongStreamService,
+    ArtistService,
     YoutubeResolverService,
   ],
 })

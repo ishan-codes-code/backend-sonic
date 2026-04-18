@@ -1,4 +1,5 @@
-import { pgTable, uuid, varchar, boolean, timestamp, text, integer, uniqueIndex, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, boolean, timestamp, text, integer, uniqueIndex, index, primaryKey } from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
 
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -30,7 +31,6 @@ export const songs = pgTable('songs', {
 
   // 🎵 METADATA (FROM LAST.FM) 
   trackName: text('track_name').notNull(),
-  artistName: text('artist_name').notNull(),
   albumName: text('album_name'),
   image: text('image'),
   // optional cache 
@@ -38,7 +38,6 @@ export const songs = pgTable('songs', {
   lastfmId: text('lastfm_id'),
   // 🧪 NORMALIZATION (CRITICAL)
   normalizedTrackName: text('normalized_track_name').notNull(),
-  normalizedArtistName: text('normalized_artist_name').notNull(),
   // 🧾 DEBUG / FALLBACK 
   youtubeTitle: text('youtube_title'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -77,3 +76,63 @@ export const playlistSongs = pgTable('playlist_songs', {
   index('playlist_id_idx').on(table.playlistId),
   index('song_id_idx').on(table.songId),
 ]);
+
+
+
+// ─── Artists (permanent) ─────────────────────────────────────────────────────
+
+export const artists = pgTable('artists', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  name: text('name').notNull(),
+  // Lowercase, symbol-stripped version for dedup (e.g. "jasmine sandlas")
+  normalizedName: text('normalized_name').notNull().unique(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Many-to-many: song ↔ artist (permanent join table)
+export const songArtists = pgTable('song_artists', {
+  songId: uuid('song_id').notNull().references(() => songs.id, { onDelete: 'cascade' }),
+  artistId: uuid('artist_id').notNull().references(() => artists.id, { onDelete: 'cascade' }),
+  // 0 = primary/first artist, 1+ = featured artists (preserves Last.fm order)
+  position: integer('position').notNull().default(0),
+}, (table) => [
+  primaryKey({ columns: [table.songId, table.artistId] }),
+  index('sa_artist_id_idx').on(table.artistId),
+  index('sa_song_id_idx').on(table.songId),
+]);
+
+// ─── Relations ───────────────────────────────────────────────────────────────
+
+export const songsRelations = relations(songs, ({ many }) => ({
+  artists: many(songArtists),
+}));
+
+export const artistsRelations = relations(artists, ({ many }) => ({
+  songs: many(songArtists),
+}));
+
+export const playlistRelations = relations(playlist, ({ many }) => ({
+  songs: many(playlistSongs),
+}));
+
+export const playlistSongsRelations = relations(playlistSongs, ({ one }) => ({
+  playlist: one(playlist, {
+    fields: [playlistSongs.playlistId],
+    references: [playlist.id],
+  }),
+  song: one(songs, {
+    fields: [playlistSongs.songId],
+    references: [songs.id],
+  }),
+}));
+
+export const songArtistsRelations = relations(songArtists, ({ one }) => ({
+  song: one(songs, {
+    fields: [songArtists.songId],
+    references: [songs.id],
+  }),
+  artist: one(artists, {
+    fields: [songArtists.artistId],
+    references: [artists.id],
+  }),
+}));
