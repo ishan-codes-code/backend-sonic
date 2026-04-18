@@ -1,7 +1,8 @@
 import { InferSelectModel } from 'drizzle-orm';
-import { songs } from '../../../infrastructure/database/schema';
+import { songs, artists } from '../../../infrastructure/database/schema';
 
-export type Song = InferSelectModel<typeof songs>;
+export type Artist = InferSelectModel<typeof artists>;
+export type Song = InferSelectModel<typeof songs> & { artists?: Artist[] };
 
 export type PlayResponseDto =
   | { type: 'ready'; streamUrl: string; song: Song }

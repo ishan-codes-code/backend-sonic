@@ -1,8 +1,9 @@
-import { and, eq, InferInsertModel } from 'drizzle-orm';
+import { and, asc, eq, InferInsertModel } from 'drizzle-orm';
 import { NeonHttpDatabase } from 'drizzle-orm/neon-http';
 import { DRIZZLE_PROVIDER } from '../../infrastructure/database/database.module';
 import * as schema from '../../infrastructure/database/schema';
 import { Inject, Injectable } from '@nestjs/common';
+import { Song } from './dto/play-response.dto';
 
 @Injectable()
 export class SongCatalogService {
@@ -11,55 +12,86 @@ export class SongCatalogService {
     private readonly db: NeonHttpDatabase<typeof schema>,
   ) { }
 
-  async findByYoutubeId(youtubeId: string) {
-    const results = await this.db
-      .select()
-      .from(schema.songs)
-      .where(eq(schema.songs.youtubeId, youtubeId))
-      .limit(1);
+  async findByYoutubeId(youtubeId: string): Promise<Song | null> {
+    const result = await this.db.query.songs.findFirst({
+      where: eq(schema.songs.youtubeId, youtubeId),
+      with: {
+        artists: {
+          with: {
+            artist: true,
+          },
+          orderBy: [asc(schema.songArtists.position)],
+        },
+      },
+    });
 
-    return results[0] || null;
+    if (!result) return null;
+
+    // Flatten relations for easier consumption
+    return {
+      ...result,
+      artists: result.artists.map((sa) => sa.artist),
+    };
   }
 
-  async findById(id: string) {
-    const results = await this.db
-      .select()
-      .from(schema.songs)
-      .where(eq(schema.songs.id, id))
-      .limit(1);
+  async findById(id: string): Promise<Song | null> {
+    const result = await this.db.query.songs.findFirst({
+      where: eq(schema.songs.id, id),
+      with: {
+        artists: {
+          with: {
+            artist: true,
+          },
+          orderBy: [asc(schema.songArtists.position)],
+        },
+      },
+    });
 
-    return results[0] || null;
+    if (!result) return null;
+
+    return {
+      ...result,
+      artists: result.artists.map((sa) => sa.artist),
+    };
   }
 
   async findByNormalizedTrackArtist(
     normalizedTrackName: string,
     normalizedArtistName: string,
-  ) {
+  ): Promise<Song | null> {
+    // We join artists to see if ANY of the song's artists match the normalizedArtistName.
+    // This is more robust than matching a single blob string.
     const results = await this.db
-      .select()
+      .selectDistinct({
+        song: schema.songs,
+      })
       .from(schema.songs)
+      .innerJoin(schema.songArtists, eq(schema.songs.id, schema.songArtists.songId))
+      .innerJoin(schema.artists, eq(schema.songArtists.artistId, schema.artists.id))
       .where(
         and(
           eq(schema.songs.normalizedTrackName, normalizedTrackName),
-          eq(schema.songs.normalizedArtistName, normalizedArtistName),
+          eq(schema.artists.normalizedName, normalizedArtistName),
         ),
       )
       .limit(1);
 
-    return results[0] || null;
+    if (results.length === 0) return null;
+
+    // Re-fetch with all artists for the found song
+    return this.findById(results[0].song.id);
   }
 
-  async create(data: InferInsertModel<typeof schema.songs>) {
+  async create(data: InferInsertModel<typeof schema.songs>): Promise<Song> {
     const [newSong] = await this.db
       .insert(schema.songs)
       .values(data)
       .returning();
 
-
-    return newSong;
+    return { ...newSong, artists: [] };
   }
 
-  async updateR2Key(youtubeId: string, r2Key: string, duration?: number) {
+  async updateR2Key(youtubeId: string, r2Key: string, duration?: number): Promise<Song> {
     const [updated] = await this.db
       .update(schema.songs)
       .set({
@@ -69,7 +101,7 @@ export class SongCatalogService {
       .where(eq(schema.songs.youtubeId, youtubeId))
       .returning();
 
-    return updated;
+    return { ...updated, artists: [] };
   }
 
   async delete(id: string) {

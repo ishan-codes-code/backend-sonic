@@ -18,15 +18,26 @@ export class RecommendationController {
   @Get()
   async getRecommendations(
     @Query('title') title: string,
-    @Query('artist') artist: string,
+    @Query('artists') artistsRaw: string,
     @Query('limit') limit?: string,
   ) {
     if (!title || title.trim().length === 0) {
       throw new BadRequestException('title is required');
     }
 
-    if (!artist || artist.trim().length === 0) {
-      throw new BadRequestException('artist is required');
+    if (!artistsRaw) {
+      throw new BadRequestException('artists is required');
+    }
+
+    let artists: any[];
+    try {
+      artists = typeof artistsRaw === 'string' ? JSON.parse(artistsRaw) : artistsRaw;
+    } catch {
+      throw new BadRequestException('artists must be a valid JSON array');
+    }
+
+    if (!Array.isArray(artists) || artists.length === 0) {
+      throw new BadRequestException('artists must be a non-empty array');
     }
 
     const parsedLimit =
@@ -40,7 +51,7 @@ export class RecommendationController {
 
     return this.recommendationService.getRecommendations(
       title,
-      artist,
+      artists,
       parsedLimit,
     );
   }

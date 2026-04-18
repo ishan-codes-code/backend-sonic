@@ -101,22 +101,32 @@ export class PlaylistService {
         throw new NotFoundException('Playlist not found');
       }
 
-      // 2️⃣ Get songs using join
+      // 2️⃣ Get songs using Relational API (to include artists)
+      const playlistSongs = await this.db.query.playlistSongs.findMany({
+        where: eq(schema.playlistSongs.playlistId, playlistId),
+        with: {
+          song: {
+            with: {
+              artists: {
+                with: {
+                  artist: true,
+                },
+                orderBy: [asc(schema.songArtists.position)],
+              },
+            },
+          },
+        },
+        orderBy: [asc(schema.playlistSongs.position)],
+      });
 
-      const songs = await this.db
-        .select({
-          ...getTableColumns(schema.songs),
-          position: schema.playlistSongs.position,
-        })
-        .from(schema.playlistSongs)
-        .innerJoin(
-          schema.songs,
-          eq(schema.playlistSongs.songId, schema.songs.id),
-        )
-        .where(eq(schema.playlistSongs.playlistId, playlistId))
-        .orderBy(asc(schema.playlistSongs.position));
-
-      return songs;
+      return playlistSongs.map((ps) => {
+        const song = ps.song as any;
+        return {
+          ...song,
+          artists: song.artists?.map((sa: any) => sa.artist) || [],
+          position: ps.position,
+        };
+      });
     } catch (error) {
       console.log('error:', error);
       throw new InternalServerErrorException('Failed to get playlist');

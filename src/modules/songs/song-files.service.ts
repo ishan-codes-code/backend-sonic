@@ -14,6 +14,7 @@ const YTDlpWrap = require('yt-dlp-wrap').default;
 const ffmpegStatic = require('ffmpeg-static');
 
 const MAX_SONG_DURATION_SECONDS = 600;
+const MIN_SONG_DURATION_SECONDS = 30;
 
 @Injectable()
 export class SongFilesService implements OnModuleInit {
@@ -110,6 +111,13 @@ export class SongFilesService implements OnModuleInit {
         throw new Error(
           `The processed audio duration (${duration}s) exceeds the maximum allowed limit of ${MAX_SONG_DURATION_SECONDS}s.`,
         );
+      } else if (duration < MIN_SONG_DURATION_SECONDS) {
+        console.warn(
+          `[Layer 4] Audio too short for ${videoId}: ${duration}s. Rejecting...`,
+        );
+        throw new Error(
+          `The processed audio duration (${duration}s) is less than the minimum allowed limit of ${MIN_SONG_DURATION_SECONDS}s.`,
+        );
       }
 
       console.log(`Extraction complete. Uploading ${finalPath} to R2...`);
@@ -133,7 +141,7 @@ export class SongFilesService implements OnModuleInit {
 
       // Attempt cleanup if file exists
       if (fs.existsSync(finalPath)) {
-        await fs.remove(finalPath).catch(() => {});
+        await fs.remove(finalPath).catch(() => { });
       }
 
       throw new HttpException(

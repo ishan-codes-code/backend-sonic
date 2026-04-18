@@ -44,10 +44,10 @@ export class SongsService {
         youtubeId: song.youtubeId,
         songId: song.id,
         trackName: song.trackName,
-        artistName: song.artistName,
+        artistName: song.artists?.[0]?.name ?? 'Unknown Artist',
         youtubeTitle: song.youtubeTitle ?? song.trackName,
         normalizedTrackName: song.normalizedTrackName,
-        normalizedArtistName: song.normalizedArtistName,
+        normalizedArtistName: song.artists?.[0]?.normalizedName ?? 'unknown_artist',
         image: song.image ?? undefined,
       });
 
