@@ -127,17 +127,31 @@ export class YoutubeScorerService {
     if (title.includes(normalizedArtist)) score += 3;
 
     // ── TIER 4: Explicit official labels in title ──────────────────────────────
-    if (
+    // For a streaming app, clean official audio is the ideal format.
+    // The gap must be wide enough to overcome channel-trust bonuses
+    // (e.g. VEVO +15) when a genuine official audio exists elsewhere.
+
+    if (title.includes('official audio')) {
+      score += 15; // ideal format for streaming
+    } else if (
       title.includes('official music video') ||
       title.includes('official video')
     ) {
-      score += 20;
-    } else if (title.includes('official audio')) {
-      score += 2;
+      score += 8; // legitimate, but not ideal for audio streaming
     }
 
-    if (title.includes('audio') && !title.includes('video')) {
+    // Extra nudge: explicitly labeled music videos are suboptimal for streaming
+    if (title.includes('music video')) {
       score -= 3;
+    }
+
+    // Mild penalty for generic "audio" (non-official, often low quality)
+    if (
+      title.includes('audio') &&
+      !title.includes('official') &&
+      !title.includes('video')
+    ) {
+      score -= 2;
     }
 
     // ── TIER 5: Soft negatives ────────────────────────────────────────────────

@@ -217,7 +217,7 @@ export class YoutubeResolverService {
 
     const rejectedCount = rawItems.length - items.length;
     if (rejectedCount > 0) {
-      this.logger.log(
+      this.logger.debug(
         `Hard-rejected ${rejectedCount}/${rawItems.length} video(s) for "${normalizedTrackName}"`,
       );
     }
