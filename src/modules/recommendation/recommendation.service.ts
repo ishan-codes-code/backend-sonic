@@ -5,7 +5,7 @@ import {
 } from '../../services/lastfm.service';
 import { normalizeString } from '../../shared/utils/string.utils';
 import { SongCatalogService } from '../songs/song-catalog.service';
-import { YoutubeResolverService } from '../songs/youtube-resolver.service';
+import { YoutubeResolverService } from '../youtube/youtube-resolver.service';
 
 interface RecommendationCacheEntry {
   expiresAt: number;
