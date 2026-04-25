@@ -4,7 +4,7 @@ import { PlayResponseDto, ResolvedPlayableSong } from './dto/play-response.dto';
 import { SongCatalogService } from './song-catalog.service';
 import { SongJobsService } from './song-jobs.service';
 import { SongStreamService } from './song-stream.service';
-import { YoutubeResolverService } from './youtube-resolver.service';
+import { YoutubeResolverService } from '../youtube/youtube-resolver.service';
 import { normalizeString } from '../../shared/utils/string.utils';
 
 @Injectable()
