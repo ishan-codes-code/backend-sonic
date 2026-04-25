@@ -5,7 +5,12 @@ import { ApiModule } from './api.module';
 import { AllExceptionsFilter } from '../../infrastructure/common/filters/all-exceptions.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(ApiModule);
+  const isProd = process.env.NODE_ENV === 'production';
+  const app = await NestFactory.create(ApiModule, {
+    logger: isProd
+      ? ['log', 'error', 'warn']
+      : ['log', 'error', 'warn', 'debug', 'verbose'],
+  });
 
   app.use(helmet());
 
