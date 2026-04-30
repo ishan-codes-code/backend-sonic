@@ -12,7 +12,9 @@ export interface ProcessJobData {
   trackName: string;
   artistName: string;
   youtubeTitle: string;
-  image?: string;
+  image?: string | null;
+  externalId?: string;
+  lastfmId?: string;
   normalizedTrackName: string;
   normalizedArtistName: string;
 }

@@ -1,89 +1,140 @@
 import { RecommendationService } from './recommendation.service';
 import { LastFmService } from '../../services/lastfm.service';
-import { SongCatalogService } from '../songs/song-catalog.service';
-import { YoutubeResolverService } from '../youtube/youtube-resolver.service';
+import { ListeningService } from '../listening/listening.service';
 
 describe('RecommendationService', () => {
   let service: RecommendationService;
-  let lastFmService: jest.Mocked<
-    Pick<LastFmService, 'getSimilarTracks'>
-  >;
-  let youtubeResolverService: jest.Mocked<Pick<YoutubeResolverService, 'isQuotaExhausted'>>;
-  let songCatalogService: jest.Mocked<Pick<SongCatalogService, 'findByNormalizedTrackArtist'>>;
-
-  const mockArtists = [{ name: 'Seed Artist', normalizedName: 'seed artist' }];
+  let lastFmService: jest.Mocked<Pick<LastFmService, 'getSimilarTracks'>>;
+  let listeningService: jest.Mocked<Pick<ListeningService, 'getUserHistory'>>;
 
   beforeEach(() => {
     lastFmService = {
       getSimilarTracks: jest.fn(),
     };
-    youtubeResolverService = {
-      isQuotaExhausted: jest.fn().mockReturnValue(false),
-    };
-    songCatalogService = {
-      findByNormalizedTrackArtist: jest.fn(),
+    listeningService = {
+      getUserHistory: jest.fn(),
     };
 
     service = new RecommendationService(
       lastFmService as any,
-      youtubeResolverService as any,
-      songCatalogService as any,
+      listeningService as any,
     );
   });
 
-  it('filters invalid and duplicate recommendations', async () => {
-    lastFmService.getSimilarTracks.mockResolvedValue([
-      { title: 'Track One', artist: 'Artist One', image: 'https://img/1.png' },
+  it('uses recent songs as seeds, merges similar tracks, dedupes, and returns lastfm ids', async () => {
+    listeningService.getUserHistory.mockResolvedValue([
+      historyEvent('seed-1', 'Seed One', 'Artist One'),
+      historyEvent('seed-2', 'Seed Two', 'Artist Two'),
+    ] as any);
+
+    lastFmService.getSimilarTracks
+      .mockResolvedValueOnce([
+        {
+          title: 'Shared Track',
+          artist: 'Shared Artist',
+          image: 'https://img/shared.png',
+          duration: 180,
+          lastfmId: 'shared track-shared artist',
+        },
+        {
+          title: 'Seed Two',
+          artist: 'Artist Two',
+          image: null,
+          duration: null,
+          lastfmId: 'seed two-artist two',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          title: 'Shared Track ',
+          artist: ' Shared Artist',
+          image: null,
+          duration: 181,
+          lastfmId: 'shared track-shared artist',
+        },
+        {
+          title: 'Fresh Track',
+          artist: 'Fresh Artist',
+          image: null,
+          duration: null,
+          lastfmId: null,
+        },
+      ]);
+
+    await expect(service.getRecommendationsForUser('user-1', 10)).resolves.toEqual([
       {
-        title: 'Track One ',
-        artist: ' Artist One',
-        image: 'https://img/duplicate.png',
+        trackName: 'Shared Track',
+        artistName: 'Shared Artist',
+        image: 'https://img/shared.png',
+        duration: 180,
+        lastfmId: 'shared track-shared artist',
+        score: 1.175,
       },
-      { title: '', artist: 'Artist Two', image: null },
-      { title: 'Track Three', artist: '', image: null },
-      { title: 'Track Four', artist: 'Artist Four', image: null },
+      {
+        trackName: 'Fresh Track',
+        artistName: 'Fresh Artist',
+        image: null,
+        duration: null,
+        lastfmId: null,
+        score: 0.3536,
+      },
     ]);
-
-    await expect(
-      service.getRecommendations('Seed Title', mockArtists, 10),
-    ).resolves.toEqual([
-      { trackName: 'Track One', artistName: 'Artist One', image: 'https://img/1.png', duration: null },
-      { trackName: 'Track Four', artistName: 'Artist Four', image: null, duration: null },
-    ]);
+    expect(lastFmService.getSimilarTracks).toHaveBeenCalledTimes(2);
   });
 
-  it('uses the in-memory cache for repeated requests within the ttl', async () => {
+  it('uses the cache for the same recent seed signature', async () => {
+    listeningService.getUserHistory.mockResolvedValue([
+      historyEvent('seed-1', 'Seed One', 'Artist One'),
+    ] as any);
     lastFmService.getSimilarTracks.mockResolvedValue([
-      { title: 'Track One', artist: 'Artist One', image: null },
-      { title: 'Track Two', artist: 'Artist Two', image: null },
+      {
+        title: 'Track One',
+        artist: 'Artist One',
+        image: null,
+        duration: null,
+        lastfmId: 'track one-artist one',
+      },
+      {
+        title: 'Track Two',
+        artist: 'Artist Two',
+        image: null,
+        duration: null,
+        lastfmId: null,
+      },
     ]);
 
-    const first = await service.getRecommendations(
-      'Seed Title',
-      mockArtists,
-      1,
-    );
-    const second = await service.getRecommendations(
-      'Seed Title',
-      mockArtists,
-      2,
-    );
+    const first = await service.getRecommendationsForUser('user-1', 1);
+    const second = await service.getRecommendationsForUser('user-1', 2);
 
     expect(first).toEqual([
-      { trackName: 'Track One', artistName: 'Artist One', image: null, duration: null },
+      {
+        trackName: 'Track One',
+        artistName: 'Artist One',
+        image: null,
+        duration: null,
+        lastfmId: 'track one-artist one',
+        score: 1,
+      },
     ]);
-    expect(second).toEqual([
-      { trackName: 'Track One', artistName: 'Artist One', image: null, duration: null },
-      { trackName: 'Track Two', artistName: 'Artist Two', image: null, duration: null },
-    ]);
+    expect(second).toHaveLength(2);
     expect(lastFmService.getSimilarTracks).toHaveBeenCalledTimes(1);
   });
 
-  it('returns an empty array when the Last.fm request fails', async () => {
-    lastFmService.getSimilarTracks.mockRejectedValue(new Error('boom'));
+  it('returns an empty queue when there are no recent songs', async () => {
+    listeningService.getUserHistory.mockResolvedValue([]);
 
-    await expect(
-      service.getRecommendations('Seed Title', mockArtists, 5),
-    ).resolves.toEqual([]);
+    await expect(service.getRecommendationsForUser('user-1', 5)).resolves.toEqual([]);
+    expect(lastFmService.getSimilarTracks).not.toHaveBeenCalled();
   });
 });
+
+function historyEvent(id: string, trackName: string, artistName: string) {
+  return {
+    id: `event-${id}`,
+    song: {
+      id,
+      trackName,
+      artists: [{ name: artistName, normalizedName: artistName.toLowerCase() }],
+    },
+  };
+}

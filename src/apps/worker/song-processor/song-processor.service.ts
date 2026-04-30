@@ -117,6 +117,8 @@ export class SongProcessorService {
         normalizedTrackName: data.normalizedTrackName,
         youtubeTitle: data.youtubeTitle,
         image: data.image ?? null,
+        externalId: data.externalId ?? null,
+        lastfmId: data.lastfmId ?? null,
         r2Key: result.r2Key,
         duration: result.duration,
       });

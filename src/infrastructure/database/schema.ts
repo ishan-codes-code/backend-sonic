@@ -23,29 +23,38 @@ export const sessions = pgTable('sessions', {
 });
 
 
-
-
 export const songs = pgTable('songs', {
   id: uuid('id').defaultRandom().primaryKey(),
 
-  // 🎬 SOURCE (AUDIO) 
+  // 🎬 SOURCE (AUDIO)
   youtubeId: text('youtube_id').notNull().unique(),
   r2Key: text('r2_key').notNull().unique(),
 
-  // 🎵 METADATA (FROM LAST.FM) 
+  // 🎵 METADATA
   trackName: text('track_name').notNull(),
   albumName: text('album_name'),
-  image: text('image'),
-  // optional cache 
   duration: integer('duration').notNull(),
+
+  image: text('image'),
+  // optional cache
   lastfmId: text('lastfm_id'),
+
+  // 🌐 EXTERNAL MAPPING (OPTIONAL)
+  // Used to map this record to external systems (e.g., MusicBrainz, iTunes, etc.)
+  externalId: text('external_id'),
+
   // 🧪 NORMALIZATION (CRITICAL)
   normalizedTrackName: text('normalized_track_name').notNull(),
-  // 🧾 DEBUG / FALLBACK 
+
+  // 🛡️ INTERNAL / ADMIN FLAG
+  // Used for internal moderation, QA, or admin workflows only (not for public logic)
+  isVerified: boolean('is_verified').default(false).notNull(),
+
+  // 🧾 DEBUG / FALLBACK
   youtubeTitle: text('youtube_title'),
+
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
-
 
 
 
@@ -104,10 +113,38 @@ export const songArtists = pgTable('song_artists', {
   index('sa_song_id_idx').on(table.songId),
 ]);
 
+export const listeningEvents = pgTable('listening_events', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  songId: uuid('song_id').notNull().references(() => songs.id, { onDelete: 'cascade' }),
+  playedAt: timestamp('played_at').defaultNow().notNull(),
+  durationListenedSeconds: integer('duration_listened_seconds').default(0),
+  completed: boolean('completed').default(false),
+}, (table) => [
+  index('le_user_id_idx').on(table.userId),
+  index('le_song_id_idx').on(table.songId),
+  index('le_played_at_idx').on(table.playedAt),
+]);
+
+
+
 // ─── Relations ───────────────────────────────────────────────────────────────
+
+export const listeningEventsRelations = relations(listeningEvents, ({ one }) => ({
+  user: one(users, { fields: [listeningEvents.userId], references: [users.id] }),
+  song: one(songs, { fields: [listeningEvents.songId], references: [songs.id] }),
+}));
+
+export const usersRelations = relations(users, ({ many }) => ({
+  sessions: many(sessions),
+  playlists: many(playlist),
+  listeningEvents: many(listeningEvents),
+}));
+
 
 export const songsRelations = relations(songs, ({ many }) => ({
   artists: many(songArtists),
+  listeningEvents: many(listeningEvents),
 }));
 
 export const artistsRelations = relations(artists, ({ many }) => ({

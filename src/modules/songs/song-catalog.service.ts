@@ -1,4 +1,4 @@
-import { and, asc, eq, InferInsertModel } from 'drizzle-orm';
+import { and, asc, eq, InferInsertModel, or } from 'drizzle-orm';
 import { NeonHttpDatabase } from 'drizzle-orm/neon-http';
 import { DRIZZLE_PROVIDER } from '../../infrastructure/database/database.module';
 import * as schema from '../../infrastructure/database/schema';
@@ -28,6 +28,40 @@ export class SongCatalogService {
     if (!result) return null;
 
     // Flatten relations for easier consumption
+    return {
+      ...result,
+      artists: result.artists.map((sa) => sa.artist),
+    };
+  }
+
+  async findByExternalOrLastfmId(
+    externalId?: string,
+    lastfmId?: string,
+  ): Promise<Song | null> {
+    if (!externalId && !lastfmId) return null;
+
+    const result = await this.db.query.songs.findFirst({
+      where:
+        externalId && lastfmId
+          ? or(
+              eq(schema.songs.externalId, externalId),
+              eq(schema.songs.lastfmId, lastfmId),
+            )
+          : externalId
+            ? eq(schema.songs.externalId, externalId)
+            : eq(schema.songs.lastfmId, lastfmId!),
+      with: {
+        artists: {
+          with: {
+            artist: true,
+          },
+          orderBy: [asc(schema.songArtists.position)],
+        },
+      },
+    });
+
+    if (!result) return null;
+
     return {
       ...result,
       artists: result.artists.map((sa) => sa.artist),
@@ -103,7 +137,6 @@ export class SongCatalogService {
 
     return { ...updated, artists: [] };
   }
-
   async delete(id: string) {
     await this.db.delete(schema.songs).where(eq(schema.songs.id, id));
   }

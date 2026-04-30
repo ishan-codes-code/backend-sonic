@@ -1,6 +1,9 @@
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { PlaySongDto } from './dto/song.dto';
-import { PlayResponseDto, ResolvedPlayableSong } from './dto/play-response.dto';
+import {
+  PlayResponseDto,
+  ResolvedPlayableSong,
+} from './dto/play-response.dto';
 import { SongCatalogService } from './song-catalog.service';
 import { SongJobsService } from './song-jobs.service';
 import { SongStreamService } from './song-stream.service';
@@ -48,7 +51,9 @@ export class SongsService {
         youtubeTitle: song.youtubeTitle ?? song.trackName,
         normalizedTrackName: song.normalizedTrackName,
         normalizedArtistName: song.artists?.[0]?.normalizedName ?? 'unknown_artist',
-        image: song.image ?? undefined,
+        image: song.image ?? null,
+        externalId: song.externalId ?? undefined,
+        lastfmId: song.lastfmId ?? undefined,
       });
 
       return { type: 'job', jobId: job.youtubeId };
@@ -80,7 +85,18 @@ export class SongsService {
     const normalizedTrackName = normalizeString(dto.trackName!);
     const normalizedArtistName = normalizeString(dto.artistName!);
 
-    // Path B: normalized dedup lookup
+    // Path B: external ID dedup lookup
+    const existingByExternalId =
+      await this.songCatalogService.findByExternalOrLastfmId(
+        dto.externalId,
+        dto.lastfmId,
+      );
+
+    if (existingByExternalId) {
+      return { type: 'existing', song: existingByExternalId };
+    }
+
+    // Path C: normalized dedup lookup
     const existing = await this.songCatalogService.findByNormalizedTrackArtist(
       normalizedTrackName,
       normalizedArtistName,
@@ -96,7 +112,7 @@ export class SongsService {
       normalizedArtistName,
     );
 
-    // Path C: resolve via YouTube, then insert stub record
+    // Path D: resolve via YouTube, then insert stub record
     const ytSong = await this.youtubeResolverService.resolveFromTrackAndArtist(
       dto.trackName!,
       dto.artistName!,
@@ -119,7 +135,9 @@ export class SongsService {
         normalizedTrackName,
         normalizedArtistName,
         youtubeTitle: ytSong.youtubeTitle,
-        image: ytSong.image ?? undefined,
+        image: dto.image ?? null,
+        externalId: dto.externalId,
+        lastfmId: dto.lastfmId,
       },
     };
   }

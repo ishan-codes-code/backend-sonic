@@ -70,6 +70,7 @@ export interface LastFmTrackMetadata {
   artist: string;
   image: string | null;
   duration?: number | null;
+  lastfmId?: string | null;
 }
 
 export function pickLastFmBestArtworkUrl(
@@ -103,6 +104,15 @@ function extractArtistName(
   }
 
   return '';
+}
+
+function buildLastFmTrackId(title: string, artist: string): string | null {
+  const normalizedTitle = normalizeString(title);
+  const normalizedArtist = normalizeString(artist);
+
+  if (!normalizedTitle || !normalizedArtist) return null;
+
+  return `${normalizedTitle}-${normalizedArtist}`;
 }
 
 @Injectable()
@@ -158,12 +168,18 @@ export class LastFmService {
         ? [trackData]
         : [];
 
-    return tracks.map((track) => ({
-      title: typeof track.name === 'string' ? track.name : '',
-      artist: extractArtistName(track.artist),
-      image: pickLastFmBestArtworkUrl(track.image),
-      duration: typeof track.duration === 'number' ? track.duration : null,
-    }));
+    return tracks.map((track) => {
+      const title = typeof track.name === 'string' ? track.name : '';
+      const artist = extractArtistName(track.artist);
+
+      return {
+        title,
+        artist,
+        image: pickLastFmBestArtworkUrl(track.image),
+        duration: typeof track.duration === 'number' ? track.duration : null,
+        lastfmId: buildLastFmTrackId(title, artist),
+      };
+    });
   }
 
   async searchLastFmTracks(query: string): Promise<SearchTrackResult[]> {
@@ -206,7 +222,9 @@ export class LastFmService {
 
         if (!normalizedTitle || !normalizedArtist) continue;
 
-        const uniqueId = `${normalizedTitle}-${normalizedArtist}`;
+        const uniqueId = buildLastFmTrackId(track.name, track.artist);
+
+        if (!uniqueId) continue;
 
         if (!seen.has(uniqueId)) {
           seen.add(uniqueId);
@@ -266,12 +284,18 @@ export class LastFmService {
           ? [trackData]
           : [];
 
-      return tracks.map((track) => ({
-        title: typeof track.name === 'string' ? track.name : '',
-        artist: extractArtistName(track.artist),
-        image: pickLastFmBestArtworkUrl(track.image),
-        duration: track.duration ? parseInt(track.duration, 10) : null,
-      }));
+      return tracks.map((track) => {
+        const title = typeof track.name === 'string' ? track.name : '';
+        const artist = extractArtistName(track.artist);
+
+        return {
+          title,
+          artist,
+          image: pickLastFmBestArtworkUrl(track.image),
+          duration: track.duration ? parseInt(track.duration, 10) : null,
+          lastfmId: buildLastFmTrackId(title, artist),
+        };
+      });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`Last.fm API error (tag.getTopTracks): ${message}`);

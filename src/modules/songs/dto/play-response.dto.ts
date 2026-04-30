@@ -22,7 +22,8 @@ export type ResolvedPlayableSong =
       normalizedArtistName: string;
       youtubeTitle: string;
       duration?: number;
-      image?: string;
+      image?: string | null;
+      externalId?: string;
       lastfmId?: string;
     };
   };

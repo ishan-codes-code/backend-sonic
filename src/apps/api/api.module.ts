@@ -13,6 +13,7 @@ import { PlaylistModule } from '../../modules/playlist/playlist.module';
 import { RecommendationModule } from '../../modules/recommendation/recommendation.module';
 import { SearchModule } from '../../modules/search/search.module';
 import { DiscoveryModule } from '../../modules/discovery/discovery.module';
+import { ListeningModule } from '../../modules/listening/listening.module';
 
 
 
@@ -36,6 +37,7 @@ import { DiscoveryModule } from '../../modules/discovery/discovery.module';
     SearchModule,
     RecommendationModule,
     DiscoveryModule,
+    ListeningModule,
   ],
   controllers: [AppController],
   providers: [

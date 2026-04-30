@@ -39,7 +39,7 @@ export class YoutubeScorerService {
       /\b(hindi|tamil|telugu|kannada|malayalam|punjabi|bengali|marathi|urdu)\s+(dubbed|version|cover)\b/i,
       /\bdubbed\b/,
 
-      // Lyrics-only videos (we want audio with thumbnail)
+      // Lyrics-only videos are poor playback candidates.
       /\blyrics?\s*(video|version)?\b/,
 
       // Compilations / jukebox
