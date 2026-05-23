@@ -6,7 +6,7 @@ import configuration from '../../infrastructure/config/configuration';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { R2Module } from '../../infrastructure/r2/r2.module';
 import { AuthModule } from '../../modules/auth/auth.module';
-import { SongsApiModule } from '../../modules/songs/songs-api.module';
+import { SongsApiModule } from '../../modules/song/songs-api.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PlaylistModule } from '../../modules/playlist/playlist.module';

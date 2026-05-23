@@ -61,7 +61,9 @@ describe('RecommendationService', () => {
         },
       ]);
 
-    await expect(service.getRecommendationsForUser('user-1', 10)).resolves.toEqual([
+    await expect(
+      service.getRecommendationsForUser('user-1', 10),
+    ).resolves.toEqual([
       {
         trackName: 'Shared Track',
         artistName: 'Shared Artist',
@@ -123,17 +125,206 @@ describe('RecommendationService', () => {
   it('returns an empty queue when there are no recent songs', async () => {
     listeningService.getUserHistory.mockResolvedValue([]);
 
-    await expect(service.getRecommendationsForUser('user-1', 5)).resolves.toEqual([]);
+    await expect(
+      service.getRecommendationsForUser('user-1', 5),
+    ).resolves.toEqual([]);
     expect(lastFmService.getSimilarTracks).not.toHaveBeenCalled();
+  });
+
+  it('prioritizes the latest song only when it is manual while still blending recent history', async () => {
+    listeningService.getUserHistory.mockResolvedValue([
+      historyEvent('manual-seed', 'Manual Seed', 'Manual Artist', true),
+      historyEvent('auto-seed', 'Auto Seed', 'Auto Artist', false),
+    ] as any);
+
+    lastFmService.getSimilarTracks
+      .mockResolvedValueOnce([
+        {
+          title: 'Manual Similar',
+          artist: 'Manual Similar Artist',
+          image: null,
+          duration: null,
+          lastfmId: null,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          title: 'Auto Similar',
+          artist: 'Auto Similar Artist',
+          image: null,
+          duration: null,
+          lastfmId: null,
+        },
+      ]);
+
+    await expect(
+      service.getRecommendationsForUser('user-1', 10),
+    ).resolves.toEqual([
+      {
+        trackName: 'Manual Similar',
+        artistName: 'Manual Similar Artist',
+        image: null,
+        duration: null,
+        lastfmId: null,
+        score: 1,
+      },
+      {
+        trackName: 'Auto Similar',
+        artistName: 'Auto Similar Artist',
+        image: null,
+        duration: null,
+        lastfmId: null,
+        score: 0.5,
+      },
+    ]);
+
+    expect(lastFmService.getSimilarTracks).toHaveBeenCalledTimes(2);
+    expect(lastFmService.getSimilarTracks).toHaveBeenCalledWith(
+      'Manual Seed',
+      'Manual Artist',
+      expect.any(Number),
+    );
+    expect(lastFmService.getSimilarTracks).toHaveBeenCalledWith(
+      'Auto Seed',
+      'Auto Artist',
+      expect.any(Number),
+    );
+  });
+
+  it('keeps normal recency order when the latest song is autoplayed even if older songs were manual', async () => {
+    listeningService.getUserHistory.mockResolvedValue([
+      historyEvent('auto-seed', 'Auto Seed', 'Auto Artist', false),
+      historyEvent('manual-seed', 'Manual Seed', 'Manual Artist', true),
+    ] as any);
+
+    lastFmService.getSimilarTracks
+      .mockResolvedValueOnce([
+        {
+          title: 'Auto Similar',
+          artist: 'Auto Similar Artist',
+          image: null,
+          duration: null,
+          lastfmId: null,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          title: 'Manual Similar',
+          artist: 'Manual Similar Artist',
+          image: null,
+          duration: null,
+          lastfmId: null,
+        },
+      ]);
+
+    await expect(
+      service.getRecommendationsForUser('user-1', 10),
+    ).resolves.toEqual([
+      {
+        trackName: 'Auto Similar',
+        artistName: 'Auto Similar Artist',
+        image: null,
+        duration: null,
+        lastfmId: null,
+        score: 1,
+      },
+      {
+        trackName: 'Manual Similar',
+        artistName: 'Manual Similar Artist',
+        image: null,
+        duration: null,
+        lastfmId: null,
+        score: 0.5,
+      },
+    ]);
+
+    expect(lastFmService.getSimilarTracks).toHaveBeenNthCalledWith(
+      1,
+      'Auto Seed',
+      'Auto Artist',
+      expect.any(Number),
+    );
+    expect(lastFmService.getSimilarTracks).toHaveBeenNthCalledWith(
+      2,
+      'Manual Seed',
+      'Manual Artist',
+      expect.any(Number),
+    );
+  });
+
+  it('boosts recommendation scores for completed songs with high listened duration', async () => {
+    listeningService.getUserHistory.mockResolvedValue([
+      historyEvent('strong-seed', 'Strong Seed', 'Strong Artist', false, {
+        completed: true,
+        durationListenedSeconds: 180,
+        songDuration: 200,
+      }),
+      historyEvent('normal-seed', 'Normal Seed', 'Normal Artist'),
+    ] as any);
+
+    lastFmService.getSimilarTracks
+      .mockResolvedValueOnce([
+        {
+          title: 'Strong Similar',
+          artist: 'Strong Similar Artist',
+          image: null,
+          duration: null,
+          lastfmId: null,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          title: 'Normal Similar',
+          artist: 'Normal Similar Artist',
+          image: null,
+          duration: null,
+          lastfmId: null,
+        },
+      ]);
+
+    await expect(
+      service.getRecommendationsForUser('user-1', 10),
+    ).resolves.toEqual([
+      {
+        trackName: 'Strong Similar',
+        artistName: 'Strong Similar Artist',
+        image: null,
+        duration: null,
+        lastfmId: null,
+        score: 1.4,
+      },
+      {
+        trackName: 'Normal Similar',
+        artistName: 'Normal Similar Artist',
+        image: null,
+        duration: null,
+        lastfmId: null,
+        score: 0.5,
+      },
+    ]);
   });
 });
 
-function historyEvent(id: string, trackName: string, artistName: string) {
+function historyEvent(
+  id: string,
+  trackName: string,
+  artistName: string,
+  isManualAdd = false,
+  options: {
+    completed?: boolean;
+    durationListenedSeconds?: number;
+    songDuration?: number;
+  } = {},
+) {
   return {
     id: `event-${id}`,
+    isManualAdd,
+    completed: options.completed ?? false,
+    durationListenedSeconds: options.durationListenedSeconds ?? 0,
     song: {
       id,
       trackName,
+      duration: options.songDuration ?? 200,
       artists: [{ name: artistName, normalizedName: artistName.toLowerCase() }],
     },
   };

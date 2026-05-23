@@ -14,9 +14,11 @@ interface RecommendationCacheEntry {
 interface RecentSeed {
   trackName: string;
   artistName: string;
+  apiArtistName: string;
   normalizedTrackName: string;
   normalizedArtistName: string;
   recencyRank: number;
+  listeningSignalWeight: number;
 }
 
 interface ScoredCandidate {
@@ -74,7 +76,7 @@ export class RecommendationService {
         try {
           const tracks = await this.lastFmService.getSimilarTracks(
             seed.trackName,
-            seed.artistName,
+            seed.apiArtistName,
             this.perSeedFetchLimit,
           );
 
@@ -105,44 +107,109 @@ export class RecommendationService {
   }
 
   private async getRecentSeeds(userId: string): Promise<RecentSeed[]> {
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    const tasteSignals = await this.listeningService.getRecentTasteSignals(
+      userId,
+      twoHoursAgo,
+      5,
+    );
+
     const history = await this.listeningService.getUserHistory(
       userId,
       this.recentHistoryScanLimit,
       0,
     );
+
     const seeds: RecentSeed[] = [];
     const seen = new Set<string>();
 
-    for (const event of history) {
-      const song = event.song as
-        | {
-            trackName?: string;
-            artists?: Array<{ name?: string }>;
-          }
-        | null;
-      const primaryArtist = song?.artists?.[0];
-      if (!song?.trackName || !primaryArtist?.name) continue;
+    for (const signal of tasteSignals) {
+      const seed = this.toRecentSeed(signal, seeds.length, 3); // 3x multiplier
+      if (!seed) continue;
 
-      const normalizedTrackName = normalizeString(song.trackName);
-      const normalizedArtistName = normalizeString(primaryArtist.name);
-      if (!normalizedTrackName || !normalizedArtistName) continue;
-
-      const key = this.getTrackKey(normalizedTrackName, normalizedArtistName);
+      const key = this.getTrackKey(
+        seed.normalizedTrackName,
+        seed.normalizedArtistName,
+      );
       if (seen.has(key)) continue;
 
       seen.add(key);
-      seeds.push({
-        trackName: song.trackName,
-        artistName: primaryArtist.name,
-        normalizedTrackName,
-        normalizedArtistName,
-        recencyRank: seeds.length,
-      });
+      seeds.push(seed);
+    }
+
+    for (const event of history) {
+      const seed = this.toRecentSeed(event, seeds.length, 1); // 1x multiplier
+      if (!seed) continue;
+
+      const key = this.getTrackKey(
+        seed.normalizedTrackName,
+        seed.normalizedArtistName,
+      );
+      if (seen.has(key)) continue;
+
+      seen.add(key);
+      seeds.push(seed);
 
       if (seeds.length >= this.recentSeedLimit) break;
     }
 
     return seeds;
+  }
+
+  private toRecentSeed(event: any, recencyRank: number, multiplier: number = 1): RecentSeed | null {
+    const song = event.song as {
+      trackName?: string;
+      duration?: number;
+      artists?: Array<{ name?: string }>;
+    } | null;
+    const allArtists = song?.artists || [];
+    const primaryArtist = allArtists[0];
+    if (!song?.trackName || !primaryArtist?.name) return null;
+
+    const artistName = allArtists.map((a) => a.name).join(', ');
+    const normalizedTrackName = normalizeString(song.trackName);
+    const normalizedArtistName = normalizeString(artistName);
+    if (!normalizedTrackName || !normalizedArtistName) return null;
+
+    return {
+      trackName: song.trackName,
+      artistName: artistName,
+      apiArtistName: primaryArtist.name,
+      normalizedTrackName,
+      normalizedArtistName,
+      recencyRank,
+      listeningSignalWeight: this.getListeningSignalWeight(event, song) * multiplier,
+    };
+  }
+
+  private getListeningSignalWeight(
+    event: {
+      completed?: boolean | null;
+      durationListenedSeconds?: number | null;
+    },
+    song: { duration?: number | null } | null,
+  ): number {
+    let weight = 1;
+
+    if (event.completed) {
+      weight += 0.2;
+    }
+
+    const listenedSeconds = event.durationListenedSeconds ?? 0;
+    const songDurationSeconds = song?.duration ?? 0;
+    if (listenedSeconds > 0 && songDurationSeconds > 0) {
+      const listenRatio = Math.min(listenedSeconds / songDurationSeconds, 1);
+
+      if (listenRatio >= 0.8) {
+        weight += 0.2;
+      } else if (listenRatio >= 0.5) {
+        weight += 0.1;
+      } else if (listenRatio < 0.2) {
+        weight -= 0.2;
+      }
+    }
+
+    return Number(Math.max(0.5, Math.min(weight, 1.4)).toFixed(2));
   }
 
   private buildQueue(
@@ -160,7 +227,11 @@ export class RecommendationService {
         const key = this.getTrackKey(normalizedTrackName, normalizedArtistName);
         if (recentKeys.has(key)) return;
 
-        const score = this.scoreCandidate(seed.recencyRank, rank);
+        const score = this.scoreCandidate(
+          seed.recencyRank,
+          rank,
+          seed.listeningSignalWeight,
+        );
         const existing = candidates.get(key);
 
         if (existing) {
@@ -191,10 +262,14 @@ export class RecommendationService {
       }));
   }
 
-  private scoreCandidate(seedRank: number, resultRank: number): number {
+  private scoreCandidate(
+    seedRank: number,
+    resultRank: number,
+    listeningSignalWeight: number,
+  ): number {
     const seedWeight = 1 / (seedRank + 1);
     const resultWeight = 1 / Math.sqrt(resultRank + 1);
-    return seedWeight * resultWeight;
+    return seedWeight * resultWeight * listeningSignalWeight;
   }
 
   private buildCacheKey(userId: string, seeds: RecentSeed[]): string {
@@ -204,6 +279,7 @@ export class RecommendationService {
           seed.normalizedTrackName,
           seed.normalizedArtistName,
           seed.recencyRank,
+          seed.listeningSignalWeight,
         ].join(':'),
       )
       .join('|');

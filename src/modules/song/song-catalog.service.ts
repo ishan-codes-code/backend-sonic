@@ -10,7 +10,7 @@ export class SongCatalogService {
   constructor(
     @Inject(DRIZZLE_PROVIDER)
     private readonly db: NeonHttpDatabase<typeof schema>,
-  ) { }
+  ) {}
 
   async findByYoutubeId(youtubeId: string): Promise<Song | null> {
     const result = await this.db.query.songs.findFirst({
@@ -100,8 +100,14 @@ export class SongCatalogService {
         song: schema.songs,
       })
       .from(schema.songs)
-      .innerJoin(schema.songArtists, eq(schema.songs.id, schema.songArtists.songId))
-      .innerJoin(schema.artists, eq(schema.songArtists.artistId, schema.artists.id))
+      .innerJoin(
+        schema.songArtists,
+        eq(schema.songs.id, schema.songArtists.songId),
+      )
+      .innerJoin(
+        schema.artists,
+        eq(schema.songArtists.artistId, schema.artists.id),
+      )
       .where(
         and(
           eq(schema.songs.normalizedTrackName, normalizedTrackName),
@@ -125,7 +131,11 @@ export class SongCatalogService {
     return { ...newSong, artists: [] };
   }
 
-  async updateR2Key(youtubeId: string, r2Key: string, duration?: number): Promise<Song> {
+  async updateR2Key(
+    youtubeId: string,
+    r2Key: string,
+    duration?: number,
+  ): Promise<Song> {
     const [updated] = await this.db
       .update(schema.songs)
       .set({
@@ -139,5 +149,18 @@ export class SongCatalogService {
   }
   async delete(id: string) {
     await this.db.delete(schema.songs).where(eq(schema.songs.id, id));
+  }
+
+  async updateSong(id: string, data: Partial<Song>): Promise<Song> {
+    const { artists, ...updateData } = data;
+
+    await this.db
+      .update(schema.songs)
+      .set(updateData)
+      .where(eq(schema.songs.id, id));
+
+    const updated = await this.findById(id);
+    if (!updated) throw new Error(`Song ${id} not found after update`);
+    return updated;
   }
 }

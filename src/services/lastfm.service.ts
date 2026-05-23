@@ -168,6 +168,8 @@ export class LastFmService {
         ? [trackData]
         : [];
 
+    console.log('Similar tracks length for', title, 'by', artist, 'is', tracks.length);
+
     return tracks.map((track) => {
       const title = typeof track.name === 'string' ? track.name : '';
       const artist = extractArtistName(track.artist);

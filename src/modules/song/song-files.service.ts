@@ -91,7 +91,15 @@ export class SongFilesService implements OnModuleInit {
       '-o',
       tempFilePath,
     ];
+
+
+
+
+
+
     console.log(`Starting download for ${videoId} to ${finalPath}...`);
+
+    const faststartPath = `${tempFilePath}-faststart.m4a`;
 
     try {
       // Execute download and extraction to the temporary file
@@ -120,16 +128,22 @@ export class SongFilesService implements OnModuleInit {
         );
       }
 
+
+      // ✅ ADD THIS — move moov atom to front for instant seek
+      await this.applyFaststart(finalPath, faststartPath);
+
+
       console.log(`Extraction complete. Uploading ${finalPath} to R2...`);
 
       // Read the file into a buffer to avoid Stream/Multipart Cloudflare 502 bugs
-      const fileBuffer = fs.readFileSync(finalPath);
+      // const fileBuffer = fs.readFileSync(finalPath);
+      const fileBuffer = fs.readFileSync(faststartPath); // ← read faststart file
       const key = await this.r2Service.uploadFileBuffer(fileBuffer, filename);
 
       // Cleanup the temporary file
-      await fs
-        .remove(finalPath)
-        .catch((err) => console.warn('Failed to cleanup temp file:', err));
+      await fs.remove(finalPath).catch((err) => console.warn('Failed to cleanup temp file:', err));
+      await fs.remove(faststartPath).catch((err) => console.warn('Failed to cleanup faststart file:', err));
+
 
       return {
         success: true,
@@ -143,6 +157,12 @@ export class SongFilesService implements OnModuleInit {
       if (fs.existsSync(finalPath)) {
         await fs.remove(finalPath).catch(() => { });
       }
+      // also cleanup faststart file if it exists
+      if (fs.existsSync(faststartPath)) {
+        await fs.remove(faststartPath).catch(() => { });
+      }
+
+
 
       throw new HttpException(
         `Failed to process audio: ${err.message}`,
@@ -182,4 +202,33 @@ export class SongFilesService implements OnModuleInit {
       });
     });
   }
+
+  // ✅ ADD THIS METHOD
+  private applyFaststart(inputPath: string, outputPath: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const ffmpegProcess = spawn(ffmpegStatic as string, [
+        '-i', inputPath,
+        '-c', 'copy',           // no re-encoding
+        '-movflags', '+faststart', // move moov atom to front
+        '-y',                   // overwrite if exists
+        outputPath,
+      ]);
+
+      let stderr = '';
+      ffmpegProcess.stderr.on('data', (chunk) => {
+        stderr += chunk.toString();
+      });
+
+      ffmpegProcess.on('error', reject);
+      ffmpegProcess.on('close', (code) => {
+        if (code === 0) {
+          console.log(`[faststart] moov atom moved to front for ${outputPath}`);
+          resolve();
+        } else {
+          reject(new Error(`ffmpeg faststart failed with code ${code}: ${stderr}`));
+        }
+      });
+    });
+  }
+
 }

@@ -1,9 +1,23 @@
-import { IsBoolean, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsUUID,
+  Max,
+  Min,
+  ValidateIf,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class RecordPlayDto {
   @IsUUID()
-  songId: string;
+  @IsOptional()
+  id?: string;
+
+  @ValidateIf((dto: RecordPlayDto) => !dto.id)
+  @IsUUID()
+  songId?: string;
 
   @IsInt()
   @IsOptional()
@@ -13,6 +27,7 @@ export class RecordPlayDto {
   @IsBoolean()
   @IsOptional()
   completed?: boolean;
+
 }
 
 export class GetHistoryQueryDto {
@@ -28,4 +43,19 @@ export class GetHistoryQueryDto {
   @Min(0)
   @Type(() => Number)
   offset?: number = 0;
+}
+
+export class ProgressSyncDto {
+  @IsUUID()
+  mediaId: string;
+
+  @IsNumber()
+  @Min(0)
+  position: number;
+
+  @IsNumber()
+  duration: number;
+
+  @IsNumber()
+  timestamp: number;
 }

@@ -1,4 +1,16 @@
-import { pgTable, uuid, varchar, boolean, timestamp, text, integer, uniqueIndex, index, primaryKey, pgEnum } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  uuid,
+  varchar,
+  boolean,
+  timestamp,
+  text,
+  integer,
+  uniqueIndex,
+  index,
+  primaryKey,
+  pgEnum,
+} from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 export const userRoleEnum = pgEnum('user_role', ['user', 'admin']);
@@ -9,19 +21,23 @@ export const users = pgTable('users', {
   email: varchar('email', { length: 255 }).notNull().unique(),
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
   emailVerified: boolean('email_verified').default(false),
-  favoritesPlaylistId: uuid('favorites_playlist_id').references(() => playlist.id, { onDelete: 'set null' }),
+  favoritesPlaylistId: uuid('favorites_playlist_id').references(
+    () => playlist.id,
+    { onDelete: 'set null' },
+  ),
   role: userRoleEnum('role').default('user').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
 export const sessions = pgTable('sessions', {
   id: uuid('id').defaultRandom().primaryKey(),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
   refreshTokenHash: varchar('refresh_token_hash', { length: 255 }).notNull(),
   expiresAt: timestamp('expires_at').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
-
 
 export const songs = pgTable('songs', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -56,40 +72,50 @@ export const songs = pgTable('songs', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+export const playlist = pgTable(
+  'playlist',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    name: varchar('name', { length: 150 }).notNull(),
+    description: varchar('description', { length: 255 }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    isPublic: boolean('is_public').default(false).notNull(),
+    isSystem: boolean('is_system').default(false).notNull(),
+    thumbnailUrl: text('thumbnail_url').array(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('unique_user_playlist_name').on(table.userId, table.name),
+    index('user_id_idx').on(table.userId),
+  ],
+);
 
-
-export const playlist = pgTable('playlist', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  name: varchar('name', { length: 150 }).notNull(),
-  description: varchar('description', { length: 255 }),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  isPublic: boolean('is_public').default(false).notNull(),
-  isSystem: boolean('is_system').default(false).notNull(),
-  thumbnailUrl: text('thumbnail_url').array(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at')
-    .defaultNow()
-    .$onUpdate(() => new Date())
-    .notNull(),
-}, (table) => [
-  uniqueIndex('unique_user_playlist_name').on(table.userId, table.name),
-  index('user_id_idx').on(table.userId),
-]);
-
-export const playlistSongs = pgTable('playlist_songs', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  playlistId: uuid('playlist_id').notNull().references(() => playlist.id, { onDelete: 'cascade' }),
-  songId: uuid('song_id').notNull().references(() => songs.id, { onDelete: 'cascade' }),
-  position: integer('position').notNull(),
-  addedAt: timestamp('added_at').defaultNow().notNull(),
-}, (table) => [
-  uniqueIndex('unique_playlist_song_idx').on(table.playlistId, table.songId),
-  index('playlist_order_idx').on(table.playlistId, table.position),
-  index('playlist_id_idx').on(table.playlistId),
-  index('song_id_idx').on(table.songId),
-]);
-
-
+export const playlistSongs = pgTable(
+  'playlist_songs',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    playlistId: uuid('playlist_id')
+      .notNull()
+      .references(() => playlist.id, { onDelete: 'cascade' }),
+    songId: uuid('song_id')
+      .notNull()
+      .references(() => songs.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull(),
+    addedAt: timestamp('added_at').defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('unique_playlist_song_idx').on(table.playlistId, table.songId),
+    index('playlist_order_idx').on(table.playlistId, table.position),
+    index('playlist_id_idx').on(table.playlistId),
+    index('song_id_idx').on(table.songId),
+  ],
+);
 
 // ─── Artists (permanent) ─────────────────────────────────────────────────────
 
@@ -102,57 +128,122 @@ export const artists = pgTable('artists', {
 });
 
 // Many-to-many: song ↔ artist (permanent join table)
-export const songArtists = pgTable('song_artists', {
-  songId: uuid('song_id').notNull().references(() => songs.id, { onDelete: 'cascade' }),
-  artistId: uuid('artist_id').notNull().references(() => artists.id, { onDelete: 'cascade' }),
-  // 0 = primary/first artist, 1+ = featured artists (preserves Last.fm order)
-  position: integer('position').notNull().default(0),
-}, (table) => [
-  primaryKey({ columns: [table.songId, table.artistId] }),
-  index('sa_artist_id_idx').on(table.artistId),
-  index('sa_song_id_idx').on(table.songId),
-]);
+export const songArtists = pgTable(
+  'song_artists',
+  {
+    songId: uuid('song_id')
+      .notNull()
+      .references(() => songs.id, { onDelete: 'cascade' }),
+    artistId: uuid('artist_id')
+      .notNull()
+      .references(() => artists.id, { onDelete: 'cascade' }),
+    // 0 = primary/first artist, 1+ = featured artists (preserves Last.fm order)
+    position: integer('position').notNull().default(0),
+  },
+  (table) => [
+    primaryKey({ columns: [table.songId, table.artistId] }),
+    index('sa_artist_id_idx').on(table.artistId),
+    index('sa_song_id_idx').on(table.songId),
+  ],
+);
 
-export const listeningEvents = pgTable('listening_events', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  songId: uuid('song_id').notNull().references(() => songs.id, { onDelete: 'cascade' }),
-  playedAt: timestamp('played_at').defaultNow().notNull(),
-  durationListenedSeconds: integer('duration_listened_seconds').default(0),
-  completed: boolean('completed').default(false),
-}, (table) => [
-  index('le_user_id_idx').on(table.userId),
-  index('le_song_id_idx').on(table.songId),
-  index('le_played_at_idx').on(table.playedAt),
-]);
+export const listeningEvents = pgTable(
+  'listening_events',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    songId: uuid('song_id')
+      .notNull()
+      .references(() => songs.id, { onDelete: 'cascade' }),
+    playedAt: timestamp('played_at').defaultNow().notNull(),
+    durationListenedSeconds: integer('duration_listened_seconds').default(0),
+    completed: boolean('completed').default(false),
+  },
+  (table) => [
+    // Composite index for fast history retrieval: SELECT ... WHERE user_id = ? ORDER BY played_at DESC
+    index('le_user_played_idx').on(table.userId, table.playedAt),
 
+    // Composite index for ultra-fast coalescing check: SELECT ... WHERE user_id = ? AND song_id = ? AND played_at >= ? ORDER BY played_at DESC
+    index('le_user_song_played_idx').on(table.userId, table.songId, table.playedAt),
 
+    // Maintain single song_id index for cascade deletes or stats aggregations
+    index('le_song_id_idx').on(table.songId),
+  ],
+);
 
 // ─── Relations ───────────────────────────────────────────────────────────────
 
-export const listeningEventsRelations = relations(listeningEvents, ({ one }) => ({
-  user: one(users, { fields: [listeningEvents.userId], references: [users.id] }),
-  song: one(songs, { fields: [listeningEvents.songId], references: [songs.id] }),
-}));
+export const tasteSignals = pgTable(
+  'taste_signals',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    songId: uuid('song_id')
+      .notNull()
+      .references(() => songs.id, { onDelete: 'cascade' }),
+    signalType: text('signal_type', { enum: ['manual_queue', 'play_next'] }).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('ts_user_created_idx').on(table.userId, table.createdAt),
+  ]
+);
+
+export const tasteSignalsRelations = relations(
+  tasteSignals,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [tasteSignals.userId],
+      references: [users.id],
+    }),
+    song: one(songs, {
+      fields: [tasteSignals.songId],
+      references: [songs.id],
+    }),
+  }),
+);
+
+export const listeningEventsRelations = relations(
+  listeningEvents,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [listeningEvents.userId],
+      references: [users.id],
+    }),
+    song: one(songs, {
+      fields: [listeningEvents.songId],
+      references: [songs.id],
+    }),
+  }),
+);
 
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
   playlists: many(playlist),
   listeningEvents: many(listeningEvents),
+  tasteSignals: many(tasteSignals),
 }));
-
 
 export const songsRelations = relations(songs, ({ many }) => ({
   artists: many(songArtists),
   listeningEvents: many(listeningEvents),
+  tasteSignals: many(tasteSignals),
 }));
 
 export const artistsRelations = relations(artists, ({ many }) => ({
   songs: many(songArtists),
 }));
 
-export const playlistRelations = relations(playlist, ({ many }) => ({
+export const playlistRelations = relations(playlist, ({ many, one }) => ({
   songs: many(playlistSongs),
+  user: one(users, {
+    fields: [playlist.userId],
+    references: [users.id],
+  }),
 }));
 
 export const playlistSongsRelations = relations(playlistSongs, ({ one }) => ({

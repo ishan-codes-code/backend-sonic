@@ -1,5 +1,6 @@
 import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
+import { PlaybackSessionModule } from '../playback-session/playback-session.module';
 import { R2Module } from '../../infrastructure/r2/r2.module';
 import { SongCatalogService } from './song-catalog.service';
 
@@ -10,7 +11,7 @@ import { ArtistService } from './artist.service';
 import { YoutubeModule } from '../youtube/youtube.module';
 
 @Module({
-  imports: [HttpModule, R2Module, YoutubeModule],
+  imports: [HttpModule, R2Module, YoutubeModule, PlaybackSessionModule],
   providers: [
     SongsService,
     SongCatalogService,

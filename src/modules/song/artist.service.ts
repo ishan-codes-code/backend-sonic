@@ -19,9 +19,7 @@ export class ArtistService {
    * High-level method to handle splitting, upserting, and linking artists to a song.
    * This ensures the new relational structure stays in sync with incoming data.
    */
-  async linkArtistsToSong(songId: string, rawArtistName: string) {
-    const names = splitArtists(rawArtistName);
-    
+  async linkArtistsToSong(songId: string, names: string[]) {
     for (const [index, name] of names.entries()) {
       const norm = normalizeString(name);
       
@@ -68,5 +66,20 @@ export class ArtistService {
         this.logger.error(`Failed to link artist "${name}" to song ${songId}: ${err.message}`);
       }
     }
+  }
+  /**
+   * Fully synchronizes the artists for a song to match the provided list.
+   * Only called if a mismatch is detected.
+   */
+  async syncSongArtists(songId: string, rawArtistName: string) {
+    const names = splitArtists(rawArtistName);
+
+    // 1. Delete all existing relations for this song
+    await this.db
+      .delete(schema.songArtists)
+      .where(eq(schema.songArtists.songId, songId));
+
+    // 2. Link the new ones
+    await this.linkArtistsToSong(songId, names);
   }
 }

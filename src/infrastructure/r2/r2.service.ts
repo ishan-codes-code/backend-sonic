@@ -22,6 +22,8 @@ export class R2Service {
         accessKeyId: this.configService.get<string>('r2.accessKey')!,
         secretAccessKey: this.configService.get<string>('r2.secretKey')!,
       },
+      // requestChecksumCalculation: 'WHEN_REQUIRED', // ← add this
+      // responseChecksumValidation: 'WHEN_REQUIRED', // ← add this
     });
   }
 

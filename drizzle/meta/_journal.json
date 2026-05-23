@@ -162,6 +162,27 @@
       "when": 1777544246713,
       "tag": "0022_wonderful_corsair",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1778159405053,
+      "tag": "0023_blushing_demogoblin",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1778972715774,
+      "tag": "0024_lying_shocker",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1778976609369,
+      "tag": "0025_productive_morlocks",
+      "breakpoints": true
     }
   ]
 }
