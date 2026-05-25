@@ -56,7 +56,6 @@ export class SongsService {
   }
 
   async getJobStatus(jobId: string) {
-    console.log('checking job status for job id: ', jobId);
     return this.songJobsService.getJobStatus(jobId);
   }
 
