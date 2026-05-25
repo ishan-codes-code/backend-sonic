@@ -20,7 +20,7 @@ export class SongProcessorService {
   private readonly logger = new Logger(SongProcessorService.name);
   private readonly queue: QueueItem[] = [];
   private readonly failedJobs = new Set<string>();
-  private readonly JOB_TIMEOUT_MS = 1_80_000;
+  private readonly JOB_TIMEOUT_MS = 60_000;
 
   constructor(
     private readonly songFilesService: SongFilesService,
