@@ -1,14 +1,10 @@
-import {
-  BadRequestException,
-  Controller,
-  Get,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../infrastructure/common/guards/jwt-auth.guard';
+import { GetCurrentUser } from '../../infrastructure/common/decorators/get-current-user.decorator';
+import { RecommendationQueryDto } from './dto/recommendation.dto';
 import { RecommendationService } from './recommendation.service';
 
-@Controller('recommendations')
+@Controller('recommend')
 @UseGuards(JwtAuthGuard)
 export class RecommendationController {
   constructor(
@@ -17,42 +13,12 @@ export class RecommendationController {
 
   @Get()
   async getRecommendations(
-    @Query('title') title: string,
-    @Query('artists') artistsRaw: string,
-    @Query('limit') limit?: string,
+    @GetCurrentUser() user: any,
+    @Query() query: RecommendationQueryDto,
   ) {
-    if (!title || title.trim().length === 0) {
-      throw new BadRequestException('title is required');
-    }
-
-    if (!artistsRaw) {
-      throw new BadRequestException('artists is required');
-    }
-
-    let artists: any[];
-    try {
-      artists = typeof artistsRaw === 'string' ? JSON.parse(artistsRaw) : artistsRaw;
-    } catch {
-      throw new BadRequestException('artists must be a valid JSON array');
-    }
-
-    if (!Array.isArray(artists) || artists.length === 0) {
-      throw new BadRequestException('artists must be a non-empty array');
-    }
-
-    const parsedLimit =
-      typeof limit === 'string' && limit.trim().length > 0
-        ? Number(limit)
-        : 20;
-
-    if (!Number.isFinite(parsedLimit) || parsedLimit <= 0) {
-      throw new BadRequestException('limit must be a positive number');
-    }
-
-    return this.recommendationService.getRecommendations(
-      title,
-      artists,
-      parsedLimit,
+    return this.recommendationService.getRecommendationsForUser(
+      user.id,
+      query.limit ?? 20,
     );
   }
 }

@@ -13,9 +13,9 @@ export class YoutubeScorerService {
     const HARD_REJECT_PATTERNS: RegExp[] = [
       // Audio gimmick versions
       /\b(lofi|lo-fi|lo\s+fi)\b/,
-      /\b8\s*d\s*(audio|music)\b/,
-      /\b4\s*d\s*(audio|music)\b/,
-      /\b3\s*d\s*(audio|music)\b/,
+      /\b8\s*d\s*(audio|music|sound)\b/,
+      /\b4\s*d\s*(audio|music|sound)\b/,
+      /\b3\s*d\s*(audio|music|sound)\b/,
       /\bslowed(\s*[\+&]\s*(reverb|bass\s*boost|reverbed?))?\b/,
       /\breverb(ed)?\b/,
       /\bbass\s*boost(ed)?\b/,
@@ -26,20 +26,27 @@ export class YoutubeScorerService {
       /\bsurround\s*sound\b/,
       /\bbinaural\b/,
       /\basmr\b/,
+      /\bmashup\b/,
+      /\bdj\s*mix\b/,
 
       // Karaoke / instrumental
       /\bkaraoke\b/,
       /\binstrumental\b/,
 
       // Covers and tributes (NOT official)
+      /\bcover\b/,
+      // /\bremix\b/,
       /\btribute\b/,
       /\bsoundalike\b/,
+      /\breprise\b/,
+      /\b(acoustic|acoustics|unplugged)\b/,
+      /\brecreated\b/,
 
       // Dubbed / translated versions
       /\b(hindi|tamil|telugu|kannada|malayalam|punjabi|bengali|marathi|urdu)\s+(dubbed|version|cover)\b/i,
       /\bdubbed\b/,
 
-      // Lyrics-only videos (we want audio with thumbnail)
+      // Lyrics-only videos are poor playback candidates.
       /\blyrics?\s*(video|version)?\b/,
 
       // Compilations / jukebox
@@ -50,14 +57,19 @@ export class YoutubeScorerService {
       /\bplaylist\b/,
       /\btop\s+\d+\s+(songs?|tracks?|hits?)\b/,
 
-      // Clearly live events (soft "live" handled in scoring)
+      // Clearly live events
       /\blive\s+(at|from|performance|concert|show)\b/,
       /\bconcert\s+(version|live|at)\b/,
       /\b\(live\)\b/,
       /\blive\s+session\b/,
+      /\blive\b/,
 
       // Behind the scenes / making of
       /\b(behind\s+the\s+scenes|making\s+of)\b/,
+
+      // Various versions
+      /\b(female|male)\s+version\b/,
+      /\bversion\b/,
     ];
 
     return HARD_REJECT_PATTERNS.some((p) => p.test(t));

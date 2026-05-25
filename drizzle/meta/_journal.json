@@ -148,6 +148,41 @@
       "when": 1777073310023,
       "tag": "0020_aromatic_william_stryker",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1777454467457,
+      "tag": "0021_long_impossible_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1777544246713,
+      "tag": "0022_wonderful_corsair",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1778159405053,
+      "tag": "0023_blushing_demogoblin",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1778972715774,
+      "tag": "0024_lying_shocker",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1778976609369,
+      "tag": "0025_productive_morlocks",
+      "breakpoints": true
     }
   ]
 }

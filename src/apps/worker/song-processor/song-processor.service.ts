@@ -1,50 +1,109 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { SongCatalogService } from '../../../modules/songs/song-catalog.service';
-import { SongFilesService } from '../../../modules/songs/song-files.service';
-import { SongStreamService } from '../../../modules/songs/song-stream.service';
-import { ProcessJobData } from '../../../modules/songs/song-jobs.service';
-import { ArtistService } from '../../../modules/songs/artist.service';
+import { HttpService } from '@nestjs/axios';
+import { ConfigService } from '@nestjs/config';
+import { lastValueFrom } from 'rxjs';
+import { SongCatalogService } from '../../../modules/song/song-catalog.service';
+import { SongFilesService } from '../../../modules/song/song-files.service';
+import { SongStreamService } from '../../../modules/song/song-stream.service';
+import { ProcessJobData } from '../../../modules/song/song-jobs.service';
+import { ArtistService } from '../../../modules/song/artist.service';
+import { splitArtists } from '../../../shared/utils/artist.utils';
+
+export interface QueueItem {
+  data: ProcessJobData;
+  status: 'active' | 'waiting';
+  startedAt?: number;
+}
 
 @Injectable()
 export class SongProcessorService {
   private readonly logger = new Logger(SongProcessorService.name);
-  private readonly processingJobs = new Set<string>();
+  private readonly queue: QueueItem[] = [];
   private readonly failedJobs = new Set<string>();
-  private readonly MAX_CONCURRENT = 1;
-  private readonly JOB_TIMEOUT_MS = 1_80_000;
+  private readonly JOB_TIMEOUT_MS = 60_000;
 
   constructor(
     private readonly songFilesService: SongFilesService,
     private readonly songCatalogService: SongCatalogService,
     private readonly songStreamService: SongStreamService,
     private readonly artistService: ArtistService,
-  ) {}
+    private readonly httpService: HttpService,
+    private readonly configService: ConfigService,
+  ) { }
 
-  isBusy(youtubeId: string): boolean {
-    return (
-      !this.processingJobs.has(youtubeId) &&
-      this.processingJobs.size >= this.MAX_CONCURRENT
+  getRetryAfterForJob(youtubeId: string): number {
+    const index = this.queue.findIndex((item) => item.data.youtubeId === youtubeId);
+    if (index === -1) return 15;
+
+    const activeItem = this.queue.find((item) => item.status === 'active');
+    let remainingActiveMs = this.JOB_TIMEOUT_MS;
+    if (activeItem && activeItem.startedAt) {
+      remainingActiveMs = Math.max(
+        0,
+        this.JOB_TIMEOUT_MS - (Date.now() - activeItem.startedAt),
+      );
+    }
+
+    // Positions index: active is index 0. If this job is at index > 0, there are (index - 1) waiting jobs in front of it.
+    const waitingInFront = Math.max(0, index - 1);
+    const queuedJobsTimeMs = waitingInFront * 45_000;
+    const totalRemainingSec = Math.ceil(
+      (remainingActiveMs + queuedJobsTimeMs) / 1000,
     );
+    return Math.max(5, Math.min(600, totalRemainingSec));
   }
 
-  async handle(data: ProcessJobData): Promise<void> {
-    this.logger.log(`Processing youtubeId=${data.youtubeId}`);
+  async handle(data: ProcessJobData): Promise<{ status: 'active' | 'waiting'; retryAfter?: number }> {
+    this.logger.log(`Received handle request for youtubeId=${data.youtubeId}`);
 
     if (this.failedJobs.has(data.youtubeId)) {
       throw new Error(`Previously failed youtubeId=${data.youtubeId}`);
     }
 
-    if (this.processingJobs.has(data.youtubeId)) {
-      this.logger.log(`Already processing youtubeId=${data.youtubeId}`);
-      return;
+    const existing = this.queue.find((item) => item.data.youtubeId === data.youtubeId);
+    if (existing) {
+      this.logger.log(
+        `Already in queue with status=${existing.status} for youtubeId=${data.youtubeId}`,
+      );
+      if (existing.status === 'waiting') {
+        return {
+          status: 'waiting',
+          retryAfter: this.getRetryAfterForJob(data.youtubeId),
+        };
+      }
+      return { status: 'active' };
     }
 
-    if (this.isBusy(data.youtubeId)) {
-      throw new Error('Worker busy');
+    const activeItem = this.queue.find((item) => item.status === 'active');
+    if (!activeItem) {
+      // Queue is empty: start processing immediately!
+      const item: QueueItem = {
+        data,
+        status: 'active',
+        startedAt: Date.now(),
+      };
+      this.queue.push(item);
+      
+      // Execute asynchronously so the HTTP POST response returns immediately
+      void this.executeJobWithTimeout(data);
+      return { status: 'active' };
+    } else {
+      // An active job is running: append as waiting
+      const item: QueueItem = {
+        data,
+        status: 'waiting',
+      };
+      this.queue.push(item);
+
+      const retryAfter = this.getRetryAfterForJob(data.youtubeId);
+      this.logger.log(
+        `Queued youtubeId=${data.youtubeId} with status 'waiting'. retryAfter=${retryAfter} seconds`,
+      );
+      return { status: 'waiting', retryAfter };
     }
+  }
 
-    this.processingJobs.add(data.youtubeId);
-
+  private async executeJobWithTimeout(data: ProcessJobData): Promise<void> {
     let timeoutHandle: NodeJS.Timeout | null = null;
 
     try {
@@ -59,6 +118,29 @@ export class SongProcessorService {
       ]);
 
       this.logger.log(`Processing completed youtubeId=${data.youtubeId}`);
+
+      if (data.webhookUrl) {
+        const workerSecret = this.configService.get<string>('WORKER_SECRET');
+        void lastValueFrom(
+          this.httpService.post(
+            data.webhookUrl,
+            {
+              youtubeId: data.youtubeId,
+              status: 'completed',
+            },
+            {
+              headers: {
+                'x-worker-secret': workerSecret,
+              },
+            },
+          ),
+        ).catch((err) => {
+          this.logger.error(
+            `Failed to send success webhook to ${data.webhookUrl}`,
+            err?.response?.data || err?.message,
+          );
+        });
+      }
     } catch (error) {
       if ((error as Error).message === 'Job timed out') {
         this.logger.error(
@@ -68,25 +150,69 @@ export class SongProcessorService {
 
       this.failedJobs.add(data.youtubeId);
       this.logger.error(`Processing failed youtubeId=${data.youtubeId}`, error);
-      throw error;
+
+      if (data.webhookUrl) {
+        const workerSecret = this.configService.get<string>('WORKER_SECRET');
+        void lastValueFrom(
+          this.httpService.post(
+            data.webhookUrl,
+            {
+              youtubeId: data.youtubeId,
+              status: 'failed',
+              error: (error as Error).message || 'Unknown processing error',
+            },
+            {
+              headers: {
+                'x-worker-secret': workerSecret,
+              },
+            },
+          ),
+        ).catch((err) => {
+          this.logger.error(
+            `Failed to send failure webhook to ${data.webhookUrl}`,
+            err?.response?.data || err?.message,
+          );
+        });
+      }
     } finally {
       if (timeoutHandle) {
         clearTimeout(timeoutHandle);
       }
-      this.processingJobs.delete(data.youtubeId);
+      
+      // Remove completed/failed job from the queue
+      const idx = this.queue.findIndex((i) => i.data.youtubeId === data.youtubeId);
+      if (idx !== -1) {
+        this.queue.splice(idx, 1);
+      }
+
+      // Automatically pick up next waiting job in the queue
+      const nextItem = this.queue.find((i) => i.status === 'waiting');
+      if (nextItem) {
+        nextItem.status = 'active';
+        nextItem.startedAt = Date.now();
+        void this.executeJobWithTimeout(nextItem.data);
+      }
     }
   }
 
-  getStatus(youtubeId: string): 'active' | 'failed' | 'not_found' {
+  getQueueStatus(youtubeId: string): { status: 'active' | 'waiting' | 'failed' | 'not_found'; retryAfter?: number } {
     if (this.failedJobs.has(youtubeId)) {
-      return 'failed';
+      return { status: 'failed' };
     }
 
-    if (this.processingJobs.has(youtubeId)) {
-      return 'active';
+    const item = this.queue.find((i) => i.data.youtubeId === youtubeId);
+    if (item) {
+      if (item.status === 'active') {
+        return { status: 'active' };
+      } else {
+        return {
+          status: 'waiting',
+          retryAfter: this.getRetryAfterForJob(youtubeId),
+        };
+      }
     }
 
-    return 'not_found';
+    return { status: 'not_found' };
   }
 
   private async processJob(data: ProcessJobData): Promise<void> {
@@ -117,6 +243,8 @@ export class SongProcessorService {
         normalizedTrackName: data.normalizedTrackName,
         youtubeTitle: data.youtubeTitle,
         image: data.image ?? null,
+        externalId: data.externalId ?? null,
+        lastfmId: data.lastfmId ?? null,
         r2Key: result.r2Key,
         duration: result.duration,
       });
@@ -134,7 +262,8 @@ export class SongProcessorService {
 
     // Phase 4 Dual-Write: Link artists to the song in the new relational tables
     if (song) {
-      await this.artistService.linkArtistsToSong(song.id, data.artistName);
+      const names = splitArtists(data.artistName);
+      await this.artistService.linkArtistsToSong(song.id, names);
     }
 
     if (!song) {

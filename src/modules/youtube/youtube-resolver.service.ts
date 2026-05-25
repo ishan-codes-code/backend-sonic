@@ -11,7 +11,6 @@ import { normalizeString } from '../../shared/utils/string.utils';
 import { YoutubeScorerService } from './youtube-scorer.service';
 import {
   YoutubeSearchResponse,
-  YoutubeSearchItem,
   ResolvedYoutubeSong,
 } from './youtube.types';
 
@@ -267,17 +266,6 @@ export class YoutubeResolverService {
       youtubeTitle: best.snippet.title.trim(),
       normalizedTrackName,
       normalizedArtistName,
-      image: this.pickThumbnail(best),
     };
-  }
-
-  private pickThumbnail(item: YoutubeSearchItem): string | null {
-    const thumbnails = item.snippet?.thumbnails;
-    return (
-      thumbnails?.high?.url ??
-      thumbnails?.medium?.url ??
-      thumbnails?.default?.url ??
-      null
-    );
   }
 }

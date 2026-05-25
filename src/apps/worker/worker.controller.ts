@@ -12,7 +12,7 @@ import {
   Post,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { ProcessJobData } from '../../modules/songs/song-jobs.service';
+import type { ProcessJobData } from '../../modules/song/song-jobs.service';
 import { SongProcessorService } from './song-processor/song-processor.service';
 
 @Controller()
@@ -22,7 +22,7 @@ export class WorkerController {
   constructor(
     private readonly songProcessorService: SongProcessorService,
     private readonly configService: ConfigService,
-  ) {}
+  ) { }
 
   private validateSecret(secretHeader: string | string[] | undefined) {
     const secret = Array.isArray(secretHeader) ? secretHeader[0] : secretHeader;
@@ -35,35 +35,36 @@ export class WorkerController {
 
   @Post('process')
   @HttpCode(202)
-  processSong(
+  async processSong(
     @Headers('x-worker-secret') secret: string | string[] | undefined,
     @Body() data: ProcessJobData,
   ) {
     this.validateSecret(secret);
 
-    const status = this.songProcessorService.getStatus(data.youtubeId);
-    if (status === 'failed') {
+    const existingStatus = this.songProcessorService.getQueueStatus(data.youtubeId);
+    if (existingStatus.status === 'failed') {
       throw new BadRequestException(
         `This video previously failed processing: ${data.youtubeId}`,
       );
     }
 
-    if (status === 'active') {
-      return { status, youtubeId: data.youtubeId };
+    if (existingStatus.status === 'active') {
+      return { status: 'active', youtubeId: data.youtubeId };
     }
 
-    if (this.songProcessorService.isBusy(data.youtubeId)) {
-      throw new HttpException('Worker busy', HttpStatus.TOO_MANY_REQUESTS);
-    }
-
-    void this.songProcessorService.handle(data).catch((error) => {
-      this.logger.error(
-        `Song processing failed for youtubeId=${data.youtubeId}`,
-        error,
+    const res = await this.songProcessorService.handle(data);
+    if (res.status === 'waiting') {
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.TOO_MANY_REQUESTS,
+          message: 'Worker waiting',
+          retryAfter: res.retryAfter,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
       );
-    });
+    }
 
-    return { status: 'accepted', youtubeId: data.youtubeId };
+    return { status: 'active', youtubeId: data.youtubeId };
   }
 
   @Get('status/:youtubeId')
@@ -73,8 +74,6 @@ export class WorkerController {
   ) {
     this.validateSecret(secret);
 
-    return {
-      status: this.songProcessorService.getStatus(youtubeId),
-    };
+    return this.songProcessorService.getQueueStatus(youtubeId);
   }
 }

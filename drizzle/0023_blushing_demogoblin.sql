@@ -1,0 +1,1 @@
+ALTER TABLE "listening_events" ADD COLUMN "is_manual_add" boolean DEFAULT false NOT NULL;

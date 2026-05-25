@@ -3,11 +3,6 @@ export interface YoutubeSearchItem {
   snippet?: {
     title?: string;
     channelTitle?: string;
-    thumbnails?: {
-      high?: { url?: string };
-      medium?: { url?: string };
-      default?: { url?: string };
-    };
   };
 }
 
@@ -20,6 +15,5 @@ export interface ResolvedYoutubeSong {
   youtubeTitle: string;
   normalizedTrackName: string;
   normalizedArtistName: string;
-  image: string | null;
   duration?: number;
 }
