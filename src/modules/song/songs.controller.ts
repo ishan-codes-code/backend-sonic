@@ -83,12 +83,12 @@ export class SongsController {
    * clients (and CDN edges) can reuse the redirect without hitting this
    * endpoint again for the same window.
    */
-  // @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
   @Get(':id')
   async streamAudio(@Param('id') id: string, @Req() req: Request, @Res() res: Response) {
     this.logger.log(`Stream request for songId=${id}`);
 
-    const { url } = await this.songsService.streamAudio(id);
+   const url ='https://google.com';
 
     // Allow the client to cache the redirect itself for 230 s.
     // Keeping it under 240 s ensures the presigned URL is still valid on use.
