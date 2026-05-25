@@ -24,7 +24,6 @@ export class SongsController {
     @Headers('x-device-id') deviceId: string = 'default-session',
     @Body() dto: PlaySongDto,
   ) {
-    console.log("incoming req on song/play", deviceId)
     const response = await this.songsService.play(dto);
     if (response.type === 'ready') {
       const playbackToken = await this.playbackSessionService.getOrCreatePlaybackToken(user.id, deviceId);
