@@ -1,5 +1,4 @@
 #!/data/data/com.termux/files/usr/bin/bash
-set -euo pipefail
 
 fail_step() {
   printf 'Failed: %s\n' "$1" >&2
@@ -10,8 +9,11 @@ run_step() {
   local description="$1"
   shift
   printf '\n==> %s\n' "$description"
-  "$@" || fail_step "$description"
+  "$@" </dev/null || fail_step "$description"
 }
+
+main() {
+set -euo pipefail
 
 if [[ -z "${PREFIX:-}" || "$PREFIX" != *"/com.termux/"* ]]; then
   fail_step 'This installer must run inside Termux on Android.'
@@ -125,11 +127,31 @@ if [[ "$API_READY" != 1 ]]; then
   fail_step "API did not start; inspect $REPO/logs/api.log and $REPO/logs/supervisor.log."
 fi
 
-LAN_IP="$(ip -o -4 addr show wlan0 2>/dev/null | awk 'NR == 1 { split($4, a, "/"); print a[1] }')"
-if [[ -z "$LAN_IP" ]]; then
-  LAN_IP="$(ip -o -4 addr show 2>/dev/null | awk '$2 !~ /lo/ && !found { split($4, a, "/"); print a[1]; found=1 }')"
+LAN_IP="$(termux-wifi-connectioninfo 2>/dev/null |
+  sed -n 's/.*"ip"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' |
+  head -n 1 || true)"
+if [[ "$LAN_IP" == 127.* || "$LAN_IP" == 169.254.* ]]; then
+  LAN_IP=''
 fi
-LAN_IP="${LAN_IP:-127.0.0.1}"
+
+if [[ -z "$LAN_IP" ]]; then
+  LAN_IP="$(ip -o -4 addr show wlan0 2>/dev/null |
+    awk 'NR == 1 { split($4, a, "/"); print a[1] }' || true)"
+  if [[ "$LAN_IP" == 127.* || "$LAN_IP" == 169.254.* ]]; then
+    LAN_IP=''
+  fi
+fi
+if [[ -z "$LAN_IP" ]]; then
+  LAN_IP="$(ip -o -4 addr show 2>/dev/null |
+    awk '$2 !~ /lo/ && !found { split($4, a, "/"); print a[1]; found=1 }' || true)"
+  if [[ "$LAN_IP" == 127.* || "$LAN_IP" == 169.254.* ]]; then
+    LAN_IP=''
+  fi
+fi
+if [[ -z "$LAN_IP" ]]; then
+  LAN_IP='127.0.0.1'
+  printf 'Could not detect your Wi-Fi address. Find it in Android Wi-Fi settings and use http://<that-ip>:3000\n'
+fi
 TOKEN_COUNT="$(awk '/^SETUP TOKEN: / { count++ } END { print count+0 }' "$REPO/logs/api.log")"
 SETUP_TOKEN=''
 if (( TOKEN_COUNT > PREVIOUS_TOKEN_COUNT )); then
@@ -144,3 +166,6 @@ else
   printf 'The setup token was already issued; it is not reprinted. Keep the token from first install.\n'
 fi
 printf 'Logs: %s/logs/ (supervisor restarts API and worker after exits).\n' "$REPO"
+}
+
+main "$@"
