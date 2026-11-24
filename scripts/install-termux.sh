@@ -127,7 +127,7 @@ if [[ "$API_READY" != 1 ]]; then
   fail_step "API did not start; inspect $REPO/logs/api.log and $REPO/logs/supervisor.log."
 fi
 
-LAN_IP="$(termux-wifi-connectioninfo 2>/dev/null |
+LAN_IP="$(timeout 5 termux-wifi-connectioninfo 2>/dev/null |
   sed -n 's/.*"ip"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' |
   head -n 1 || true)"
 if [[ "$LAN_IP" == 127.* || "$LAN_IP" == 169.254.* ]]; then
