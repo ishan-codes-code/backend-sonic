@@ -8,6 +8,7 @@ import * as fs from 'fs-extra';
 import * as path from 'path';
 import * as os from 'os';
 import { spawn } from 'child_process';
+import { ConfigService } from '@nestjs/config';
 import { R2Service } from '../../infrastructure/r2/r2.service';
 
 const YTDlpWrap = require('yt-dlp-wrap').default;
@@ -21,7 +22,10 @@ export class SongFilesService implements OnModuleInit {
   private readonly uploadsDir = path.join(process.cwd(), 'uploads');
   private ytDlpWrap: any;
 
-  constructor(private readonly r2Service: R2Service) {
+  constructor(
+    private readonly r2Service: R2Service,
+    private readonly configService: ConfigService,
+  ) {
     fs.ensureDirSync(this.uploadsDir);
   }
 
@@ -64,7 +68,8 @@ export class SongFilesService implements OnModuleInit {
     const finalPath = `${tempFilePath}.m4a`;
 
     const ytDlpCookiesPath =
-      process.env.YTDLP_COOKIES_PATH ?? path.join(process.cwd(), 'cookies.txt');
+      this.configService.get<string>('YTDLP_COOKIES_PATH') ??
+      path.join(process.cwd(), 'cookies.txt');
     const ytDlpArgs = [
       url,
       '-f',
@@ -86,8 +91,9 @@ export class SongFilesService implements OnModuleInit {
       'node',
       '--remote-components',
       'ejs:github',
-      '--cookies',
-      ytDlpCookiesPath,
+      ...(fs.existsSync(ytDlpCookiesPath)
+        ? ['--cookies', ytDlpCookiesPath]
+        : []),
       '-o',
       tempFilePath,
     ];

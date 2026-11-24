@@ -1,5 +1,6 @@
 import { InferSelectModel } from 'drizzle-orm';
 import { songs, artists } from '../../../infrastructure/database/schema';
+import { loadRuntimeConfig } from '../../../infrastructure/config/runtime-config';
 
 export type Artist = InferSelectModel<typeof artists>;
 export type Song = InferSelectModel<typeof songs> & { artists?: Artist[] };
@@ -26,7 +27,8 @@ export interface SongDto {
 }
 
 export function toSongDto(song: Song): SongDto {
-  const workerStreamUrl = process.env.WORKER_STREAM_URL || 'http://127.0.0.1:8787';
+  const workerStreamUrl =
+    loadRuntimeConfig().WORKER_STREAM_URL || 'http://127.0.0.1:8787';
   return {
     id: song.id,
     trackName: song.trackName,

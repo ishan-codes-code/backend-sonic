@@ -1,8 +1,9 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import * as schema from './schema';
+import { DRIZZLE_PROVIDER } from './database.constants';
 
-export const DRIZZLE_PROVIDER = 'DRIZZLE_PROVIDER';
+export { DRIZZLE_PROVIDER } from './database.constants';
 
 @Global()
 @Module({
@@ -13,12 +14,12 @@ export const DRIZZLE_PROVIDER = 'DRIZZLE_PROVIDER';
       inject: [ConfigService],
       useFactory: async (configService: ConfigService) => {
         const connectionString = configService.get<string>('database.url');
-        if (!connectionString) throw new Error('DATABASE_URL is missing');
+        if (!connectionString) return undefined;
 
-        const useWs = process.env.USE_WS_DB === 'true'; // ← toggle via env
+        const useWs = configService.get<string>('USE_WS_DB') === 'true';
 
         if (useWs) {
-          console.log("running ws")
+          console.log('running ws');
           // Worker on EC2/Docker — use WebSocket
           const { neonConfig, Pool } = await import('@neondatabase/serverless');
           const { drizzle } = await import('drizzle-orm/neon-serverless');
@@ -38,4 +39,4 @@ export const DRIZZLE_PROVIDER = 'DRIZZLE_PROVIDER';
   ],
   exports: [DRIZZLE_PROVIDER],
 })
-export class DatabaseModule { }
+export class DatabaseModule {}

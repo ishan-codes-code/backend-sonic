@@ -6,6 +6,7 @@ import {
   HttpException,
 } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
+import { ConfigService } from '@nestjs/config';
 import { lastValueFrom } from 'rxjs';
 import { normalizeString } from '../../shared/utils/string.utils';
 import { YoutubeScorerService } from './youtube-scorer.service';
@@ -28,14 +29,16 @@ export class YoutubeResolverService {
   constructor(
     private readonly httpService: HttpService,
     private readonly scorer: YoutubeScorerService,
+    private readonly configService: ConfigService,
   ) { }
 
   // ─── API Key Management ──────────────────────────────────────────────────────
 
   private getApiKey(): string {
-    const isDev = process.env.NODE_ENV === 'development';
-    if (isDev && process.env.YOUTUBE_API_KEY_DEV) {
-      return process.env.YOUTUBE_API_KEY_DEV;
+    const isDev = this.configService.get<string>('NODE_ENV') === 'development';
+    const devKey = this.configService.get<string>('YOUTUBE_API_KEY_DEV');
+    if (isDev && devKey) {
+      return devKey;
     }
 
     const twentyFourHours = 24 * 60 * 60 * 1000;
@@ -44,13 +47,16 @@ export class YoutubeResolverService {
       this.useBackup = false;
     }
 
-    if (this.useBackup && process.env.YOUTUBE_API_KEY_BACKUP) {
+    const backupKey = this.configService.get<string>('YOUTUBE_API_KEY_BACKUP');
+    if (this.useBackup && backupKey) {
       this.logger.warn('Using BACKUP API key (Quota exceeded fallback active)');
-      return process.env.YOUTUBE_API_KEY_BACKUP;
+      return backupKey;
     }
 
     return (
-      process.env.YOUTUBE_API_KEY_PROD || process.env.YOUTUBE_API_KEY || ''
+      this.configService.get<string>('YOUTUBE_API_KEY_PROD') ||
+      this.configService.get<string>('YOUTUBE_API_KEY') ||
+      ''
     );
   }
 
@@ -188,7 +194,9 @@ export class YoutubeResolverService {
         );
         this.useBackup = true;
         this.lastQuotaReset = Date.now();
-        const backupKey = process.env.YOUTUBE_API_KEY_BACKUP;
+        const backupKey = this.configService.get<string>(
+          'YOUTUBE_API_KEY_BACKUP',
+        );
         if (backupKey) {
           return runWithKey(backupKey);
         }
