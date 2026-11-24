@@ -34,12 +34,12 @@ The API keys are `PORT`, `DATABASE_URL`, `JWT_ACCESS_SECRET`,
 `YOUTUBE_API_KEY_PROD`, `WORKER_URL`, `WORKER_SECRET`,
 `WORKER_STREAM_SECRET`, `WORKER_STREAM_URL`, `API_CORS_ORIGIN`,
 `CLOUDFLARE_ACCOUNT_ID`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`,
-`R2_BUCKET`, `REDIS_URL`, `REDIS_HOST`, `REDIS_PORT`, `LASTFM_API_KEY`,
-`YTDLP_COOKIES_PATH`, `USE_WS_DB`, and `NODE_ENV`.
+`R2_BUCKET`, `LASTFM_API_KEY`, `YTDLP_COOKIES_PATH`, `USE_WS_DB`, and
+`NODE_ENV`.
 
 The worker keys are `WORKER_PORT`, `DATABASE_URL`, `WORKER_SECRET`,
-`WORKER_CORS_ORIGIN`, `REDIS_HOST`, `REDIS_PORT`, `R2_ACCOUNT_ID`,
-`R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET`, and `REDIS_URL`.
+`WORKER_CORS_ORIGIN`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, and
+`R2_BUCKET`.
 
 ## Setup flow
 
@@ -70,11 +70,12 @@ In Termux, run:
 curl -fsSL https://raw.githubusercontent.com/ishan-codes-code/backend-sonic/main/scripts/install-termux.sh | bash
 ```
 
-The installer installs dependencies, builds, starts Redis, then supervises the
-API and worker. Use the printed LAN URL and one-time setup token in the mobile
-app. Install the Termux:Boot Android app and rerun the installer to configure
-startup after device reboot. Termux may require disabling battery optimization
-for reliable background operation.
+The installer installs dependencies, builds, then supervises the API and
+worker. The worker uses its in-memory queue and waits for database connectivity;
+no separate queue service is required. Use the printed LAN URL and one-time
+setup token in the mobile app. Install the Termux:Boot Android app and rerun the
+installer to configure startup after device reboot. Termux may require
+disabling battery optimization for reliable background operation.
 
 ## Health endpoint
 

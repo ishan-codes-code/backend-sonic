@@ -12,8 +12,8 @@ import {
 import { WorkerHealthModule } from './worker-health.module';
 import { WorkerHealthService } from './worker-health.service';
 import {
+  getWorkerRuntimeState,
   isDatabaseAvailable,
-  isRedisAvailable,
   waitForWorkerReadiness,
   WorkerRuntimeState,
 } from './worker-runtime';
@@ -29,10 +29,8 @@ class WorkerWaitingModule {}
 function logStateChange(state: WorkerRuntimeState): void {
   const message =
     state === 'waiting-for-config'
-      ? 'Worker waiting for DATABASE_URL, WORKER_SECRET, or Redis.'
-      : state === 'redis-down'
-        ? 'Worker waiting for Redis.'
-        : 'Worker configuration and Redis are ready.';
+      ? 'Worker waiting for DATABASE_URL, WORKER_SECRET, and database connectivity.'
+      : 'Worker configuration and database are ready.';
   console.log(message);
 }
 
@@ -85,15 +83,8 @@ function monitorWorker(
         }
 
         configService.set('WORKER_SECRET', current.WORKER_SECRET);
-        const [redisAvailable, databaseAvailable] = await Promise.all([
-          isRedisAvailable(current),
-          isDatabaseAvailable(current),
-        ]);
-        const state: WorkerRuntimeState = !databaseAvailable
-          ? 'waiting-for-config'
-          : redisAvailable
-            ? 'ok'
-            : 'redis-down';
+        const databaseAvailable = await isDatabaseAvailable(current);
+        const state = getWorkerRuntimeState(current, databaseAvailable);
         if (healthService.getState() !== state) {
           logStateChange(state);
           healthService.setState(state);
@@ -118,13 +109,12 @@ async function bootstrap(): Promise<void> {
 
   const readyConfig = await waitForWorkerReadiness(
     () => reloadRuntimeConfig({ readOnly: true }),
-    isRedisAvailable,
+    isDatabaseAvailable,
     (state) => {
       logStateChange(state);
       healthService.setState(state);
     },
     5000,
-    isDatabaseAvailable,
   );
 
   await waitingApp.close();

@@ -8,13 +8,6 @@ export default () => {
     database: {
       url: runtime.DATABASE_URL,
     },
-    redis: {
-      url: runtime.REDIS_URL,
-    },
-    queue: {
-      host: runtime.REDIS_HOST || '127.0.0.1',
-      port: parseInt(runtime.REDIS_PORT || '6379', 10),
-    },
     r2: {
       accountId: runtime.R2_ACCOUNT_ID ?? runtime.CLOUDFLARE_ACCOUNT_ID,
       accessKey: runtime.R2_ACCESS_KEY,

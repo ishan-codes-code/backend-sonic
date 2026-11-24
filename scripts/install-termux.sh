@@ -27,8 +27,8 @@ if [[ -f "$REPO/logs/api.log" ]]; then
 fi
 
 run_step 'Updating Termux packages' pkg update -y
-run_step 'Installing Git, Node.js, Python, FFmpeg, Redis, and build tools' \
-  pkg install -y git nodejs-lts python ffmpeg redis make clang pkg-config curl iproute2 termux-api
+run_step 'Installing Git, Node.js, Python, FFmpeg, and build tools' \
+  pkg install -y git nodejs-lts python ffmpeg make clang pkg-config curl iproute2 termux-api
 run_step 'Installing yt-dlp' \
   python -m pip install --upgrade --break-system-packages yt-dlp
 run_step 'Verifying yt-dlp installation' yt-dlp --version
@@ -51,23 +51,6 @@ run_step 'Installing Node.js dependencies' npm ci
 run_step 'Building API and worker' npm run build
 
 mkdir -p "$REPO/logs" "$REPO/data"
-if ! redis-cli ping 2>/dev/null | grep -q '^PONG$'; then
-  run_step 'Starting Redis' redis-server \
-    --daemonize yes \
-    --pidfile "$REPO/data/redis.pid" \
-    --logfile "$REPO/logs/redis.log"
-fi
-REDIS_READY=0
-for _ in {1..10}; do
-  if redis-cli ping 2>/dev/null | grep -q '^PONG$'; then
-    REDIS_READY=1
-    break
-  fi
-  sleep 1
-done
-if [[ "$REDIS_READY" != 1 ]]; then
-  fail_step "Redis did not start; inspect $REPO/logs/redis.log."
-fi
 
 if command -v termux-wake-lock >/dev/null 2>&1; then
   termux-wake-lock || printf 'Note: termux-wake-lock was unavailable.\n'
@@ -87,10 +70,6 @@ set -euo pipefail
 cd "$HOME/backend-sonic"
 mkdir -p logs data
 termux-wake-lock 2>/dev/null || true
-if ! redis-cli ping 2>/dev/null | grep -q '^PONG$'; then
-  redis-server --daemonize yes --pidfile "$HOME/backend-sonic/data/redis.pid" \
-    --logfile "$HOME/backend-sonic/logs/redis.log"
-fi
 if [[ ! -f logs/supervisor.pid ]]; then
   nohup "$HOME/backend-sonic/scripts/run.sh" \
     >>logs/supervisor.log 2>&1 </dev/null &

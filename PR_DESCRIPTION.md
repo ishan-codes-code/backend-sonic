@@ -25,7 +25,7 @@ The system balances shared storage efficiency with personal user experiences. Ea
 - **Database**: Neon Postgres (Serverless)
 - **ORM**: Drizzle ORM (with Drizzle Kit for migrations)
 - **Storage**: Cloudflare R2 (S3-compatible via AWS SDK)
-- **Queue**: BullMQ with IORedis (for background processing)
+- **Queue**: In-memory worker queue; the API dispatches jobs to the worker over HTTP.
 - **Authentication**: JWT (Access & Refresh tokens with session persistence)
 - **Media**: `yt-dlp-wrap` for downloads, `ffmpeg-static` for audio processing
 - **Discovery**: Last.fm API (v2.0)
@@ -35,7 +35,7 @@ The system balances shared storage efficiency with personal user experiences. Ea
 The application runs as two distinct processes:
 
 1. **API Server**: Entry point in [src/apps/api/main.ts](/src/apps/api/main.ts). Handles HTTP traffic, authentication, and validation.
-2. **Background Worker**: Entry point in [src/apps/worker/main.ts](/src/apps/worker/main.ts). Consumes "play-song" jobs from BullMQ to prepare media.
+2. **Background Worker**: Entry point in [src/apps/worker/main.ts](/src/apps/worker/main.ts). Receives HTTP processing requests and queues them in memory to prepare media.
 
 ### Module Layout
 
@@ -83,7 +83,7 @@ The `/songs/play` flow is the core of the app:
 1. Extracts audio via `yt-dlp`.
 2. Converts to optimized AAC (`.m4a`) via `ffmpeg`.
 3. Uploads to Cloudflare R2 and persists the song entry to the database.
-4. Updates BullMQ job data with the final `streamUrl` and `song` metadata.
+4. Returns worker job status and final `streamUrl` and `song` metadata through the existing HTTP endpoints.
 
 ### Playlist & Library Management
 
