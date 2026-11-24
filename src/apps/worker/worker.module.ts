@@ -4,6 +4,7 @@ import configuration from '../../infrastructure/config/configuration';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { SongProcessorModule } from './song-processor/song-processor.module';
 import { WorkerController } from './worker.controller';
+import { WorkerHealthModule } from './worker-health.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { WorkerController } from './worker.controller';
     }),
     DatabaseModule,
     SongProcessorModule,
+    WorkerHealthModule,
   ],
   controllers: [WorkerController],
 })

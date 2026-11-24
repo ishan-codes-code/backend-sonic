@@ -1,7 +1,7 @@
 import { defineConfig } from 'drizzle-kit';
 import { loadRuntimeConfig } from './src/infrastructure/config/runtime-config';
 
-const databaseUrl = loadRuntimeConfig().DATABASE_URL;
+const databaseUrl = loadRuntimeConfig({ readOnly: true }).DATABASE_URL;
 if (!databaseUrl) {
   throw new Error('DATABASE_URL is missing');
 }

@@ -29,6 +29,12 @@ export class SongFilesService implements OnModuleInit {
     fs.ensureDirSync(this.uploadsDir);
   }
 
+  private getFfmpegPath(): string {
+    return this.configService.get<string>('TERMUX_PREFIX')
+      ? 'ffmpeg'
+      : (ffmpegStatic as string);
+  }
+
   async onModuleInit() {
     const isWindows = os.platform() === 'win32';
 
@@ -80,7 +86,7 @@ export class SongFilesService implements OnModuleInit {
       '--audio-quality',
       '128K',
       '--ffmpeg-location',
-      ffmpegStatic,
+      this.getFfmpegPath(),
       '--no-check-certificate',
       '-4',
       '--cache-dir',
@@ -179,7 +185,7 @@ export class SongFilesService implements OnModuleInit {
 
   private extractDurationInSeconds(filePath: string): Promise<number> {
     return new Promise((resolve, reject) => {
-      const ffmpegProcess = spawn(ffmpegStatic as string, ['-i', filePath]);
+      const ffmpegProcess = spawn(this.getFfmpegPath(), ['-i', filePath]);
       let stderr = '';
 
       ffmpegProcess.stderr.on('data', (chunk) => {
@@ -212,7 +218,7 @@ export class SongFilesService implements OnModuleInit {
   // ✅ ADD THIS METHOD
   private applyFaststart(inputPath: string, outputPath: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const ffmpegProcess = spawn(ffmpegStatic as string, [
+      const ffmpegProcess = spawn(this.getFfmpegPath(), [
         '-i', inputPath,
         '-c', 'copy',           // no re-encoding
         '-movflags', '+faststart', // move moov atom to front

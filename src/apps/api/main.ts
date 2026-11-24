@@ -3,12 +3,20 @@ import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
 import { AllExceptionsFilter } from '../../infrastructure/common/filters/all-exceptions.filter';
-import { loadRuntimeConfig } from '../../infrastructure/config/runtime-config';
+import {
+  ensureSetupToken,
+  loadRuntimeConfig,
+} from '../../infrastructure/config/runtime-config';
 
 async function bootstrap() {
-  const runtimeConfig = loadRuntimeConfig();
+  const runtimeConfig = loadRuntimeConfig({ generateSecrets: true });
   const setupRequired = !runtimeConfig.DATABASE_URL;
   const isProd = runtimeConfig.NODE_ENV === 'production';
+
+  const setupToken = ensureSetupToken();
+  if (setupToken.created && setupToken.token) {
+    console.info(`SETUP TOKEN: ${setupToken.token}`);
+  }
 
   if (setupRequired) {
     console.log('Setup required. Waiting for app to configure.');
@@ -37,7 +45,12 @@ async function bootstrap() {
   app.enableCors({
     origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Device-Id'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Device-Id',
+      'X-Setup-Token',
+    ],
     credentials: true,
   });
 

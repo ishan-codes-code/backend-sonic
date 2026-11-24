@@ -1,11 +1,16 @@
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash, timingSafeEqual } from 'crypto';
 import {
   constants as fsConstants,
-  accessSync,
   chmodSync,
+  closeSync,
   existsSync,
+  fsyncSync,
   mkdirSync,
+  openSync,
   readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
   writeFileSync,
 } from 'fs';
 import { dirname, resolve } from 'path';
@@ -41,9 +46,32 @@ const DEFAULTS: Record<string, string | undefined> = {
   YTDLP_COOKIES_PATH: undefined,
   USE_WS_DB: undefined,
   NODE_ENV: undefined,
+  TERMUX_PREFIX: undefined,
 };
 
-let loadedConfig: Record<string, string | undefined> | undefined;
+export const RUNTIME_CONFIG_KEYS = Object.keys(DEFAULTS).filter(
+  (key) => key !== 'TERMUX_PREFIX',
+);
+
+export const SETUP_CONFIG_KEYS = [...RUNTIME_CONFIG_KEYS];
+
+export interface RuntimeConfigOptions {
+  generateSecrets?: boolean;
+  readOnly?: boolean;
+}
+
+export type RuntimeConfig = Record<string, string | undefined>;
+
+let loadedConfig: RuntimeConfig | undefined;
+let dotenvLoaded = false;
+const lockWait = new Int32Array(new SharedArrayBuffer(4));
+
+export function getRuntimeConfigPath(): string {
+  return resolve(
+    process.cwd(),
+    process.env.CONFIG_PATH || './data/config.json',
+  );
+}
 
 function readConfigFile(configPath: string): Record<string, unknown> {
   if (!existsSync(configPath)) return {};
@@ -57,77 +85,201 @@ function readConfigFile(configPath: string): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
-function canWriteConfig(configPath: string): boolean {
-  try {
-    if (existsSync(configPath)) {
-      accessSync(configPath, fsConstants.W_OK);
-    } else {
-      mkdirSync(dirname(configPath), { recursive: true, mode: 0o700 });
-      accessSync(dirname(configPath), fsConstants.R_OK | fsConstants.W_OK);
+function withConfigLock<T>(configPath: string, operation: () => T): T {
+  const directory = dirname(configPath);
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const lockPath = `${configPath}.lock`;
+  const deadline = Date.now() + 15_000;
+  let descriptor: number | undefined;
+
+  while (descriptor === undefined) {
+    try {
+      descriptor = openSync(lockPath, 'wx', 0o600);
+      writeFileSync(descriptor, `${process.pid}\n`);
+      fsyncSync(descriptor);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+
+      try {
+        if (Date.now() - statSync(lockPath).mtimeMs > 60_000) {
+          unlinkSync(lockPath);
+          continue;
+        }
+      } catch {
+        // The lock may have been released while checking it.
+      }
+
+      if (Date.now() >= deadline) {
+        throw new Error('Timed out waiting for the runtime config lock');
+      }
+      Atomics.wait(lockWait, 0, 0, 50);
     }
-    return true;
-  } catch {
-    return false;
+  }
+
+  try {
+    return operation();
+  } finally {
+    closeSync(descriptor);
+    try {
+      unlinkSync(lockPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.error('Failed to release runtime config lock:', error);
+      }
+    }
   }
 }
 
-function persistGeneratedSecrets(
-  configPath: string,
-  fileConfig: Record<string, unknown>,
-  secrets: Record<string, string>,
-): void {
-  const nextConfig = { ...fileConfig, ...secrets };
-  writeFileSync(configPath, `${JSON.stringify(nextConfig, null, 2)}\n`, {
-    mode: 0o600,
-  });
-  chmodSync(configPath, 0o600);
+function atomicWrite(filePath: string, content: string): void {
+  const directory = dirname(filePath);
+  const tempPath = `${filePath}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`;
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(tempPath, 'wx', 0o600);
+    writeFileSync(descriptor, content);
+    fsyncSync(descriptor);
+    closeSync(descriptor);
+    descriptor = undefined;
+    renameSync(tempPath, filePath);
+    chmodSync(filePath, 0o600);
+    const directoryDescriptor = openSync(directory, fsConstants.O_RDONLY);
+    try {
+      fsyncSync(directoryDescriptor);
+    } finally {
+      closeSync(directoryDescriptor);
+    }
+  } catch (error) {
+    if (descriptor !== undefined) closeSync(descriptor);
+    try {
+      unlinkSync(tempPath);
+    } catch {
+      // The rename may already have moved the temporary file.
+    }
+    throw error;
+  }
 }
 
-export function loadRuntimeConfig(): Record<string, string | undefined> {
-  if (loadedConfig) return loadedConfig;
-
-  loadDotenv({ quiet: true });
-
-  const configPath = resolve(
-    process.cwd(),
-    process.env.CONFIG_PATH || './data/config.json',
-  );
-  const fileConfig = readConfigFile(configPath);
-  const merged: Record<string, string | undefined> = {};
-
+function mergeConfig(fileConfig: Record<string, unknown>): RuntimeConfig {
+  const merged: RuntimeConfig = {};
   for (const [key, defaultValue] of Object.entries(DEFAULTS)) {
     const fileValue = fileConfig[key];
+    const environmentKey = key === 'TERMUX_PREFIX' ? 'PREFIX' : key;
     merged[key] =
-      process.env[key] ??
+      process.env[environmentKey] ??
       (typeof fileValue === 'string' || typeof fileValue === 'number'
         ? String(fileValue)
         : defaultValue);
   }
+  return merged;
+}
 
-  const secretKeys = [
-    'JWT_ACCESS_SECRET',
-    'JWT_REFRESH_SECRET',
-    'WORKER_SECRET',
-  ];
-  const missingSecretKeys = secretKeys.filter((key) => !merged[key]);
-  const generatedSecrets: Record<string, string> = {};
+function loadEnvFile(): void {
+  if (!dotenvLoaded) {
+    loadDotenv({ quiet: true });
+    dotenvLoaded = true;
+  }
+}
 
-  if (missingSecretKeys.length > 0 && canWriteConfig(configPath)) {
-    for (const key of missingSecretKeys) {
-      const secret = randomBytes(48).toString('hex');
-      merged[key] = secret;
-      generatedSecrets[key] = secret;
-    }
-  } else if (missingSecretKeys.length > 0) {
-    console.warn(
-      'Runtime config is not writable; automatic secret generation was skipped.',
+export function loadRuntimeConfig(
+  options: RuntimeConfigOptions = {},
+): RuntimeConfig {
+  if (loadedConfig) return loadedConfig;
+
+  loadEnvFile();
+  const configPath = getRuntimeConfigPath();
+  let fileConfig = readConfigFile(configPath);
+
+  if (options.generateSecrets && !options.readOnly) {
+    const secrets = [
+      'JWT_ACCESS_SECRET',
+      'JWT_REFRESH_SECRET',
+      'WORKER_SECRET',
+    ] as const;
+    const missing = secrets.filter(
+      (key) => !process.env[key] && !fileConfig[key],
     );
+
+    if (missing.length > 0) {
+      withConfigLock(configPath, () => {
+        fileConfig = readConfigFile(configPath);
+        const generated: Record<string, string> = {};
+        for (const key of missing) {
+          if (!process.env[key] && !fileConfig[key]) {
+            generated[key] = randomBytes(48).toString('hex');
+          }
+        }
+        if (Object.keys(generated).length > 0) {
+          atomicWrite(
+            configPath,
+            `${JSON.stringify({ ...fileConfig, ...generated }, null, 2)}\n`,
+          );
+          fileConfig = { ...fileConfig, ...generated };
+        }
+      });
+    }
   }
 
-  if (Object.keys(generatedSecrets).length > 0) {
-    persistGeneratedSecrets(configPath, fileConfig, generatedSecrets);
-  }
-
-  loadedConfig = merged;
+  loadedConfig = mergeConfig(fileConfig);
   return loadedConfig;
+}
+
+export function reloadRuntimeConfig(
+  options: RuntimeConfigOptions = {},
+): RuntimeConfig {
+  loadedConfig = undefined;
+  return loadRuntimeConfig(options);
+}
+
+export function saveRuntimeConfig(
+  patch: Record<string, string>,
+): RuntimeConfig {
+  const configPath = getRuntimeConfigPath();
+  withConfigLock(configPath, () => {
+    const current = readConfigFile(configPath);
+    atomicWrite(
+      configPath,
+      `${JSON.stringify({ ...current, ...patch }, null, 2)}\n`,
+    );
+  });
+  loadedConfig = mergeConfig(readConfigFile(configPath));
+  return loadedConfig;
+}
+
+export function getEnvLockedKeys(): string[] {
+  loadEnvFile();
+  return RUNTIME_CONFIG_KEYS.filter((key) => process.env[key] !== undefined);
+}
+
+export function getRuntimeConfigEnvironment(
+  overrides: Record<string, string>,
+): NodeJS.ProcessEnv {
+  loadEnvFile();
+  return { ...process.env, ...overrides };
+}
+
+export function ensureSetupToken(): { token?: string; created: boolean } {
+  const configPath = getRuntimeConfigPath();
+  return withConfigLock(configPath, () => {
+    const hashPath = resolve(dirname(configPath), 'setup-token.sha256');
+    if (existsSync(hashPath)) return { created: false };
+
+    const token = randomBytes(32).toString('base64url');
+    const hash = createHash('sha256').update(token).digest('hex');
+    atomicWrite(hashPath, `${hash}\n`);
+    return { token, created: true };
+  });
+}
+
+export function verifySetupToken(token: string | undefined): boolean {
+  if (!token) return false;
+  const configPath = getRuntimeConfigPath();
+  const hashPath = resolve(dirname(configPath), 'setup-token.sha256');
+  if (!existsSync(hashPath)) return false;
+
+  const expected = readFileSync(hashPath, 'utf8').trim();
+  const actual = createHash('sha256').update(token).digest('hex');
+  return (
+    expected.length === actual.length &&
+    timingSafeEqual(Buffer.from(expected), Buffer.from(actual))
+  );
 }

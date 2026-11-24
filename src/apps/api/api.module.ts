@@ -15,6 +15,7 @@ import { SearchModule } from '../../modules/search/search.module';
 import { DiscoveryModule } from '../../modules/discovery/discovery.module';
 import { ListeningModule } from '../../modules/listening/listening.module';
 import { HealthController } from './health.controller';
+import { SetupController } from './setup.controller';
 
 @Module({
   imports: [
@@ -38,7 +39,7 @@ import { HealthController } from './health.controller';
     DiscoveryModule,
     ListeningModule,
   ],
-  controllers: [AppController, HealthController],
+  controllers: [AppController, HealthController, SetupController],
   providers: [
     AppService,
     {

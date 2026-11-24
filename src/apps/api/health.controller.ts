@@ -2,16 +2,12 @@ import { Controller, Get, Inject, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SkipThrottle } from '@nestjs/throttler';
 import { sql, type SQL } from 'drizzle-orm';
-import { readFileSync } from 'fs';
-import { resolve } from 'path';
 import { DRIZZLE_PROVIDER } from '../../infrastructure/database/database.constants';
-import { API_VERSION, MIN_APP_VERSION } from '../../shared/constants';
-
-const packageVersion = (
-  JSON.parse(
-    readFileSync(resolve(__dirname, '../../../package.json'), 'utf8'),
-  ) as { version: string }
-).version;
+import {
+  API_VERSION,
+  getPackageVersion,
+  MIN_APP_VERSION,
+} from '../../shared/constants';
 
 interface HealthDatabase {
   execute(query: SQL): Promise<unknown>;
@@ -57,7 +53,7 @@ export class HealthController {
 
     return {
       app: 'sonic-backend',
-      version: packageVersion,
+      version: getPackageVersion(),
       apiVersion: API_VERSION,
       minAppVersion: MIN_APP_VERSION,
       setupRequired,
