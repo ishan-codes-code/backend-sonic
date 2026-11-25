@@ -1,6 +1,5 @@
 import { neon } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-http';
-import { migrate } from 'drizzle-orm/neon-http/migrator';
+import { spawnSync } from 'child_process';
 import { resolve } from 'path';
 import {
   reloadRuntimeConfig,
@@ -67,10 +66,28 @@ async function validateConnection(databaseUrl: string): Promise<void> {
   }
 }
 
-async function runMigrations(databaseUrl: string): Promise<void> {
-  const sql = neon(databaseUrl);
-  const db = drizzle(sql);
-  await migrate(db, { migrationsFolder: resolve(process.cwd(), 'drizzle') });
+function runPush(databaseUrl: string): void {
+  const push = spawnSync(
+    process.execPath,
+    [resolve(process.cwd(), 'node_modules/drizzle-kit/bin.cjs'), 'push'],
+    {
+      cwd: process.cwd(),
+      stdio: ['ignore', 'inherit', 'inherit'],
+      env: { ...process.env, DATABASE_URL: databaseUrl },
+    },
+  );
+  if (push.error) {
+    console.error(
+      `Database setup failed: could not run drizzle-kit push: ${redactSecrets(errorMessage(push.error))}`,
+    );
+    process.exit(1);
+  }
+  if (push.status !== 0) {
+    console.error(
+      `Database setup failed: drizzle-kit push exited with code ${push.status}`,
+    );
+    process.exit(1);
+  }
 }
 
 async function main(): Promise<void> {
@@ -102,14 +119,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  try {
-    await runMigrations(databaseUrl);
-  } catch (error) {
-    console.error(
-      `Database migrations failed: ${redactSecrets(errorMessage(error))}`,
-    );
-    process.exit(1);
-  }
+  runPush(databaseUrl);
 
   saveRuntimeConfig({ DATABASE_URL: databaseUrl });
   console.log('Database configured: connection validated and tables created.');

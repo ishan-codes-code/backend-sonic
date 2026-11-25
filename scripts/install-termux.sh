@@ -52,7 +52,10 @@ else
 fi
 
 cd "$REPO"
-run_step 'Installing Node.js dependencies' npm ci
+mkdir -p "$HOME/.gyp" &&
+  printf "{'variables': {'android_ndk_path': ''}}\n" >"$HOME/.gyp/include.gypi"
+run_step 'Installing Node.js dependencies' npm ci --ignore-scripts
+run_step 'Rebuilding bcrypt for Termux' npm rebuild bcrypt
 run_step 'Building API and worker' npm run build
 
 mkdir -p "$REPO/logs" "$REPO/data"
