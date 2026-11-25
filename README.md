@@ -25,6 +25,16 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+## Termux install
+
+On Android in Termux, run:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ishan-codes-code/backend-sonic/release/v4/scripts/install-termux.sh | bash
+```
+
+The installer prompts for your Neon database URL in the terminal, then starts the API and worker.
+
 ## Project setup
 
 ```bash

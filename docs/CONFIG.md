@@ -67,7 +67,7 @@ environment variables so they survive restarts.
 In Termux, run:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ishan-codes-code/backend-sonic/main/scripts/install-termux.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ishan-codes-code/backend-sonic/release/v4/scripts/install-termux.sh | bash
 ```
 
 The installer installs dependencies, builds, then supervises the API and
