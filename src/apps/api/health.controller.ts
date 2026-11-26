@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { SkipThrottle } from '@nestjs/throttler';
 import { sql, type SQL } from 'drizzle-orm';
 import { DRIZZLE_PROVIDER } from '../../infrastructure/database/database.constants';
+import { isSetupRequired } from '../../infrastructure/config/setup-requirements';
 import {
   API_VERSION,
   getPackageVersion,
@@ -26,12 +27,28 @@ export class HealthController {
   @SkipThrottle()
   async getHealth() {
     const databaseUrl = this.configService.get<string>('database.url');
-    const setupRequired = !databaseUrl;
-    let db: 'ok' | 'down' | 'unconfigured' = setupRequired
+    const setupRequired = isSetupRequired({
+      DATABASE_URL: databaseUrl,
+      R2_ACCOUNT_ID: this.configService.get<string>('R2_ACCOUNT_ID'),
+      CLOUDFLARE_ACCOUNT_ID: this.configService.get<string>(
+        'CLOUDFLARE_ACCOUNT_ID',
+      ),
+      R2_ACCESS_KEY: this.configService.get<string>('R2_ACCESS_KEY'),
+      R2_SECRET_KEY: this.configService.get<string>('R2_SECRET_KEY'),
+      R2_BUCKET: this.configService.get<string>('R2_BUCKET'),
+      WORKER_STREAM_URL: this.configService.get<string>('WORKER_STREAM_URL'),
+      JWT_PLAYBACK_SECRET: this.configService.get<string>(
+        'JWT_PLAYBACK_SECRET',
+      ),
+      YOUTUBE_API_KEY: this.configService.get<string>('YOUTUBE_API_KEY'),
+      LASTFM_API_KEY: this.configService.get<string>('LASTFM_API_KEY'),
+    });
+    const databaseUnconfigured = !databaseUrl;
+    let db: 'ok' | 'down' | 'unconfigured' = databaseUnconfigured
       ? 'unconfigured'
       : 'down';
 
-    if (!setupRequired && this.database) {
+    if (!databaseUnconfigured && this.database) {
       let timeout: ReturnType<typeof setTimeout> | undefined;
       try {
         await Promise.race([
