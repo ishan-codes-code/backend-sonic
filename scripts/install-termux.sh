@@ -51,6 +51,12 @@ else
   run_step 'Updating backend-sonic' bash -c 'cd "$1" && git fetch origin "$2" && git checkout "$2" && git pull --ff-only' _ "$REPO" "$BACKEND_BRANCH"
 fi
 
+if [[ "$RECONFIGURE" -eq 1 ]]; then
+  # Services are stopped here, so removing the stored hash is safe. The API
+  # generates and prints a new setup token on its next start.
+  rm -f "$REPO/data/setup-token.sha256"
+fi
+
 cd "$REPO"
 mkdir -p "$HOME/.gyp" &&
   printf "{'variables': {'android_ndk_path': ''}}\n" >"$HOME/.gyp/include.gypi"
@@ -168,6 +174,14 @@ if [[ -z "$LAN_IP" ]]; then
 fi
 printf '\nSonic backend is running.\n'
 printf 'Enter this URL in the mobile app: http://%s:3000\n' "$LAN_IP"
+SETUP_TOKEN_LINE="$(grep 'SETUP TOKEN:' "$REPO/logs/api.log" 2>/dev/null | tail -n 1 || true)"
+if [[ -n "$SETUP_TOKEN_LINE" ]]; then
+  printf 'Enter this setup token in the mobile app: %s\n' "$SETUP_TOKEN_LINE"
+elif [[ "$health_body" == *'"setupRequired":true'* ]]; then
+  printf 'Setup is incomplete and no setup token was found in %s/logs/api.log.\n' "$REPO"
+  printf 'Rerun the installer with --reconfigure to generate a new token:\n'
+  printf '  curl -fsSL https://raw.githubusercontent.com/ishan-codes-code/backend-sonic/%s/scripts/install-termux.sh | bash -s -- --reconfigure\n' "$BACKEND_BRANCH"
+fi
 printf 'Logs: %s/logs/ (supervisor restarts API and worker after exits).\n' "$REPO"
 }
 

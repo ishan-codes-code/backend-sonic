@@ -15,6 +15,7 @@ import {
 } from 'fs';
 import { dirname, resolve } from 'path';
 import { config as loadDotenv } from 'dotenv';
+import { stripTrailingSlash } from './setup-requirements';
 
 const DEFAULTS: Record<string, string | undefined> = {
   PORT: '3000',
@@ -23,11 +24,12 @@ const DEFAULTS: Record<string, string | undefined> = {
   JWT_REFRESH_SECRET: undefined,
   JWT_ACCESS_EXPIRES_IN: '15m',
   JWT_REFRESH_EXPIRES_IN: '30d',
+  JWT_PLAYBACK_SECRET: undefined,
   YOUTUBE_API_KEY: undefined,
   WORKER_URL: 'http://localhost:3001',
   WORKER_SECRET: undefined,
   WORKER_STREAM_SECRET: undefined,
-  WORKER_STREAM_URL: 'http://127.0.0.1:8787',
+  WORKER_STREAM_URL: undefined,
   API_CORS_ORIGIN: undefined,
   WORKER_PORT: '3001',
   WORKER_CORS_ORIGIN: undefined,
@@ -161,11 +163,13 @@ function mergeConfig(fileConfig: Record<string, unknown>): RuntimeConfig {
   for (const [key, defaultValue] of Object.entries(DEFAULTS)) {
     const fileValue = fileConfig[key];
     const environmentKey = key === 'TERMUX_PREFIX' ? 'PREFIX' : key;
-    merged[key] =
+    const value =
       process.env[environmentKey] ??
       (typeof fileValue === 'string' || typeof fileValue === 'number'
         ? String(fileValue)
         : defaultValue);
+    merged[key] =
+      key === 'WORKER_STREAM_URL' ? stripTrailingSlash(value) : value;
   }
   return merged;
 }

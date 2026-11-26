@@ -66,4 +66,64 @@ describe('runtime config persistence', () => {
 
     expect(existsSync(process.env.CONFIG_PATH!)).toBe(false);
   });
+
+  describe('setup keys', () => {
+    let previousStreamUrl: string | undefined;
+    let previousPlaybackSecret: string | undefined;
+
+    beforeEach(() => {
+      previousStreamUrl = process.env.WORKER_STREAM_URL;
+      previousPlaybackSecret = process.env.JWT_PLAYBACK_SECRET;
+      delete process.env.WORKER_STREAM_URL;
+      delete process.env.JWT_PLAYBACK_SECRET;
+      reloadRuntimeConfig({ readOnly: true });
+    });
+
+    afterEach(() => {
+      if (previousStreamUrl === undefined) {
+        delete process.env.WORKER_STREAM_URL;
+      } else {
+        process.env.WORKER_STREAM_URL = previousStreamUrl;
+      }
+      if (previousPlaybackSecret === undefined) {
+        delete process.env.JWT_PLAYBACK_SECRET;
+      } else {
+        process.env.JWT_PLAYBACK_SECRET = previousPlaybackSecret;
+      }
+      reloadRuntimeConfig({ readOnly: true });
+    });
+
+    it('accepts and saves the user-provided playback secret', () => {
+      saveRuntimeConfig({ JWT_PLAYBACK_SECRET: 'user-playback-secret' });
+
+      expect(reloadRuntimeConfig().JWT_PLAYBACK_SECRET).toBe(
+        'user-playback-secret',
+      );
+    });
+
+    it('never generates the playback secret', () => {
+      expect(
+        reloadRuntimeConfig({ generateSecrets: true }).JWT_PLAYBACK_SECRET,
+      ).toBeUndefined();
+    });
+
+    it('has no default stream URL', () => {
+      expect(reloadRuntimeConfig().WORKER_STREAM_URL).toBeUndefined();
+    });
+
+    it('strips trailing slashes from the stream URL', () => {
+      saveRuntimeConfig({
+        WORKER_STREAM_URL: 'https://worker.example.com/',
+      });
+
+      expect(reloadRuntimeConfig().WORKER_STREAM_URL).toBe(
+        'https://worker.example.com',
+      );
+
+      process.env.WORKER_STREAM_URL = 'https://env-worker.example.com///';
+      expect(reloadRuntimeConfig().WORKER_STREAM_URL).toBe(
+        'https://env-worker.example.com',
+      );
+    });
+  });
 });

@@ -30,12 +30,19 @@ Config file keys use the same names as environment variables, for example:
 
 The API keys are `PORT`, `DATABASE_URL`, `JWT_ACCESS_SECRET`,
 `JWT_REFRESH_SECRET`, `JWT_ACCESS_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN`,
-`YOUTUBE_API_KEY`, `YOUTUBE_API_KEY_DEV`, `YOUTUBE_API_KEY_BACKUP`,
-`YOUTUBE_API_KEY_PROD`, `WORKER_URL`, `WORKER_SECRET`,
-`WORKER_STREAM_SECRET`, `WORKER_STREAM_URL`, `API_CORS_ORIGIN`,
-`CLOUDFLARE_ACCOUNT_ID`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`,
-`R2_BUCKET`, `LASTFM_API_KEY`, `YTDLP_COOKIES_PATH`, `USE_WS_DB`, and
-`NODE_ENV`.
+`JWT_PLAYBACK_SECRET`, `YOUTUBE_API_KEY`, `YOUTUBE_API_KEY_DEV`,
+`YOUTUBE_API_KEY_BACKUP`, `YOUTUBE_API_KEY_PROD`, `WORKER_URL`,
+`WORKER_SECRET`, `WORKER_STREAM_SECRET`, `WORKER_STREAM_URL`,
+`API_CORS_ORIGIN`, `CLOUDFLARE_ACCOUNT_ID`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`,
+`R2_SECRET_KEY`, `R2_BUCKET`, `LASTFM_API_KEY`, `YTDLP_COOKIES_PATH`,
+`USE_WS_DB`, and `NODE_ENV`.
+
+Setup is complete only when every required key is set and non-blank:
+`DATABASE_URL`, `R2_ACCOUNT_ID` (or legacy `CLOUDFLARE_ACCOUNT_ID`),
+`R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_BUCKET`, `WORKER_STREAM_URL`,
+`JWT_PLAYBACK_SECRET`, `YOUTUBE_API_KEY`, and `LASTFM_API_KEY`. A trailing
+slash on `WORKER_STREAM_URL` is stripped when the config loads, so stream URLs
+never contain `//`.
 
 The worker keys are `WORKER_PORT`, `DATABASE_URL`, `WORKER_SECRET`,
 `WORKER_CORS_ORIGIN`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`, and
@@ -49,7 +56,9 @@ not reveal it again. `GET /setup/status` and `POST /setup/config` require it in
 `X-Setup-Token`, are rate-limited, and never return secret values. Status
 reports per-key configuration booleans and environment-locked keys.
 
-`POST /setup/config` accepts whitelisted string keys. A supplied
+`POST /setup/config` accepts whitelisted string keys. The mobile app sends
+all required keys except `DATABASE_URL` (which the Termux installer already
+stored) in one request, leaving out environment-locked keys. A supplied
 `DATABASE_URL` must pass `select 1`; database migrations then run before values
 are saved. The API responds with migration status and exits cleanly after the
 response. Run it under `scripts/run.sh` or the Termux installer so it is
@@ -73,15 +82,18 @@ curl -fsSL https://raw.githubusercontent.com/ishan-codes-code/backend-sonic/rele
 The installer installs dependencies, builds, then supervises the API and
 worker. The worker uses its in-memory queue and waits for database connectivity;
 no separate queue service is required. Use the printed LAN URL and one-time
-setup token in the mobile app. Install the Termux:Boot Android app and rerun the
-installer to configure startup after device reboot. Termux may require
+setup token in the mobile app. If setup is incomplete and no token is printed,
+rerun the installer with `--reconfigure` to generate a new token (it also
+re-prompts for the database URL). Install the Termux:Boot Android app and rerun
+the installer to configure startup after device reboot. Termux may require
 disabling battery optimization for reliable background operation.
 
 ## Health endpoint
 
 `GET /health` is public and excluded from throttling. It always responds with
-HTTP 200 and reports the application/version contract, whether database setup
-is required, a database probe state (`ok`, `down`, or `unconfigured`), and
+HTTP 200 and reports the application/version contract, whether setup is
+required (any required key missing or blank), a database probe state (`ok`,
+`down`, or `unconfigured`, reported separately from setup completeness), and
 whether all R2 storage credentials are present (`r2` or `none`). The database
 probe runs `select 1` with a two-second timeout. The response contains no
 secrets, URLs, or keys.

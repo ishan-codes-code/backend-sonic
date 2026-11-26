@@ -24,6 +24,10 @@ import {
   SETUP_CONFIG_KEYS,
   verifySetupToken,
 } from '../../infrastructure/config/runtime-config';
+import {
+  isKeyConfigured,
+  isSetupRequired,
+} from '../../infrastructure/config/setup-requirements';
 
 const execFileAsync = promisify(execFile);
 const DATABASE_TIMEOUT_MS = 5000;
@@ -37,11 +41,11 @@ export class SetupController {
     const configured: Record<string, boolean> = {};
 
     for (const key of RUNTIME_CONFIG_KEYS) {
-      configured[key] = Boolean(config[key]);
+      configured[key] = isKeyConfigured(config, key);
     }
 
     return {
-      setupRequired: !config.DATABASE_URL,
+      setupRequired: isSetupRequired(config),
       configured,
       envLocked: getEnvLockedKeys(),
     };
@@ -170,7 +174,7 @@ export class SetupController {
 
     return {
       saved: true,
-      setupRequired: !updatedConfig.DATABASE_URL,
+      setupRequired: isSetupRequired(updatedConfig),
       migration,
       restartRequired: true,
     };

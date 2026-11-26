@@ -8,7 +8,7 @@ import { PlaybackSessionService } from './playback-session.service';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_PLAYBACK_SECRET', 'fallback_playback_secret_do_not_use_in_prod'),
+        secret: configService.get<string>('JWT_PLAYBACK_SECRET'),
         signOptions: {
           expiresIn: configService.get<string>('JWT_PLAYBACK_EXPIRES_IN', '24h') as any,
         },
