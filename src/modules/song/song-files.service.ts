@@ -35,6 +35,43 @@ export class SongFilesService implements OnModuleInit {
       : (ffmpegStatic as string);
   }
 
+  private isTermux(): boolean {
+    return !!this.configService.get<string>('TERMUX_PREFIX');
+  }
+
+  private buildYtDlpArgs(url: string, tempFilePath: string): string[] {
+    const ytDlpCookiesPath =
+      this.configService.get<string>('YTDLP_COOKIES_PATH') ??
+      path.join(process.cwd(), 'cookies.txt');
+    return [
+      url,
+      '-f',
+      'ba/b',
+      '-x',
+      '--audio-format',
+      'aac',
+      '--audio-quality',
+      '128K',
+      // On Termux, let yt-dlp find ffmpeg on PATH. Elsewhere, use ffmpeg-static.
+      ...(this.isTermux()
+        ? []
+        : ['--ffmpeg-location', this.getFfmpegPath()]),
+      '--no-check-certificate',
+      '-4',
+      '--cache-dir',
+      os.tmpdir(),
+      '--js-runtimes',
+      'node',
+      '--remote-components',
+      'ejs:github',
+      ...(fs.existsSync(ytDlpCookiesPath)
+        ? ['--cookies', ytDlpCookiesPath]
+        : []),
+      '-o',
+      tempFilePath,
+    ];
+  }
+
   async onModuleInit() {
     const isWindows = os.platform() === 'win32';
 
@@ -73,36 +110,7 @@ export class SongFilesService implements OnModuleInit {
     const tempFilePath = path.join(os.tmpdir(), `${videoId}-${Date.now()}`);
     const finalPath = `${tempFilePath}.m4a`;
 
-    const ytDlpCookiesPath =
-      this.configService.get<string>('YTDLP_COOKIES_PATH') ??
-      path.join(process.cwd(), 'cookies.txt');
-    const ytDlpArgs = [
-      url,
-      '-f',
-      'ba/b',
-      '-x',
-      '--audio-format',
-      'aac',
-      '--audio-quality',
-      '128K',
-      '--ffmpeg-location',
-      this.getFfmpegPath(),
-      '--no-check-certificate',
-      '-4',
-      '--cache-dir',
-      os.tmpdir(),
-      '--extractor-args',
-      'youtube:player_client=web',
-      '--js-runtimes',
-      'node',
-      '--remote-components',
-      'ejs:github',
-      ...(fs.existsSync(ytDlpCookiesPath)
-        ? ['--cookies', ytDlpCookiesPath]
-        : []),
-      '-o',
-      tempFilePath,
-    ];
+    const ytDlpArgs = this.buildYtDlpArgs(url, tempFilePath);
 
 
 
