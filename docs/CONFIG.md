@@ -70,6 +70,9 @@ unchanged; the local path is the home directory joined with the key, giving
 `~/songs/<youtubeId>.m4a`. Only that exact form is ever resolved, and only
 files inside `~/songs` are ever served; nothing else in the home directory is
 touched, and an already-existing `~/songs` keeps its unrelated files.
+`~/songs` itself must be a real directory at the expected location: a symlink
+is rejected rather than followed, and any operation that finds the folder
+missing, swapped, or otherwise unsafe fails instead of falling back.
 
 Saving a local setup first creates `~/songs` and verifies write, read, and
 delete with a probe file that is removed afterwards; the save fails with a

@@ -2,7 +2,7 @@ import { INestApplication, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import request from 'supertest';
@@ -216,6 +216,60 @@ describe('SongStreamController (local mode)', () => {
       .get('/stream/abc123')
       .set('Authorization', `Bearer ${expired}`)
       .expect(401);
+  });
+});
+
+describe('SongStreamController (unsafe music directory)', () => {
+  const osActual = jest.requireActual('os') as typeof import('os');
+  let app: INestApplication;
+  let moduleRef: TestingModule;
+  let home: string;
+  let outside: string;
+
+  const configMock = {
+    get: (key: string) => {
+      if (key === 'storage.mode') return 'local';
+      if (key === 'JWT_PLAYBACK_SECRET') return PLAYBACK_SECRET;
+      return undefined;
+    },
+  } as unknown as ConfigService;
+
+  beforeAll(async () => {
+    home = mkdtempSync(join(tmpdir(), 'sonic-unsafe-home-'));
+    outside = mkdtempSync(join(tmpdir(), 'sonic-unsafe-outside-'));
+    jest.spyOn(osActual, 'homedir').mockReturnValue(home);
+    writeFileSync(join(outside, 'abc123.m4a'), 'outside-bytes');
+    symlinkSync(outside, join(home, 'songs'));
+
+    moduleRef = await Test.createTestingModule({
+      controllers: [SongStreamController],
+      providers: [
+        SongLocalStreamService,
+        { provide: ConfigService, useValue: configMock },
+      ],
+    }).compile();
+
+    app = moduleRef.createNestApplication();
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+    await moduleRef.close();
+    jest.restoreAllMocks();
+    rmSync(home, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  it('returns 404 instead of serving through a symlinked ~/songs', async () => {
+    const token = await signPlaybackToken();
+
+    const res = await request(app.getHttpServer())
+      .get('/stream/abc123')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404);
+
+    expect(JSON.stringify(res.body)).not.toContain('outside-bytes');
   });
 });
 

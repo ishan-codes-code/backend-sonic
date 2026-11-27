@@ -106,9 +106,11 @@ describe('SongLocalStreamService tokens', () => {
 describe('SongLocalStreamService files', () => {
   const osActual = jest.requireActual('os') as typeof import('os');
   let home: string;
+  let outside: string;
 
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), 'sonic-stream-home-'));
+    outside = mkdtempSync(join(tmpdir(), 'sonic-stream-outside-'));
     jest.spyOn(osActual, 'homedir').mockReturnValue(home);
     mkdirSync(join(home, 'songs'), { recursive: true });
   });
@@ -116,6 +118,7 @@ describe('SongLocalStreamService files', () => {
   afterEach(() => {
     jest.restoreAllMocks();
     rmSync(home, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
   });
 
   it('resolves valid ids inside ~/songs and rejects the rest', () => {
@@ -182,6 +185,30 @@ describe('SongLocalStreamService files', () => {
     expect(() => service.resolveFilePath('../outside')).toThrow(
       expect.objectContaining({ status: 400 }),
     );
+  });
+
+  it('returns 404 when ~/songs itself is a symlink, serving nothing outside', () => {
+    const service = createService(PLAYBACK_SECRET);
+    writeFileSync(join(outside, 'abc123.m4a'), 'outside-bytes');
+    rmSync(join(home, 'songs'), { recursive: true, force: true });
+    symlinkSync(outside, join(home, 'songs'));
+
+    expect(() =>
+      service.openLocalFile(join(home, 'songs', 'abc123.m4a')),
+    ).toThrow(expect.objectContaining({ status: 404 }));
+  });
+
+  it('returns 404 for a song symlink pointing outside the music folder', () => {
+    const service = createService(PLAYBACK_SECRET);
+    writeFileSync(join(outside, 'secret.m4a'), 'outside-bytes');
+    symlinkSync(
+      join(outside, 'secret.m4a'),
+      join(home, 'songs', 'evil1234.m4a'),
+    );
+
+    expect(() =>
+      service.openLocalFile(join(home, 'songs', 'evil1234.m4a')),
+    ).toThrow(expect.objectContaining({ status: 404 }));
   });
 });
 

@@ -9,8 +9,11 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { closeSync, constants, fstatSync, openSync } from 'fs';
 import {
+  assertMusicDirCurrent,
+  closeValidatedMusicDir,
   getLocalSongPath,
   isValidYoutubeId,
+  openValidatedMusicDir,
 } from '../../infrastructure/storage/local-storage';
 
 export interface PlaybackTokenPayload {
@@ -95,15 +98,26 @@ export class SongLocalStreamService {
   }
 
   /**
-   * Open the resolved file without following symlinks. Returns the fd and
-   * size; the caller must close the fd. Missing files, symlinks, and
-   * non-files all become 404 so nothing outside ~/songs is ever served.
+   * Open the resolved file without following symlinks. The music folder
+   * itself is validated first (never a followed symlink) and re-checked
+   * after the open, so a swapped folder cannot redirect the read. Returns
+   * the fd and size; the caller must close the fd. Missing files, symlinks,
+   * non-files, and unsafe folders all become 404 so nothing outside ~/songs
+   * is ever served.
    */
   openLocalFile(filePath: string): { fd: number; size: number } {
+    let handle: ReturnType<typeof openValidatedMusicDir>;
+    try {
+      handle = openValidatedMusicDir();
+    } catch {
+      throw new NotFoundException('Song file not found.');
+    }
+
     let fd: number;
     try {
       fd = openSync(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
     } catch {
+      closeValidatedMusicDir(handle);
       throw new NotFoundException('Song file not found.');
     }
     try {
@@ -111,6 +125,7 @@ export class SongLocalStreamService {
       if (!stats.isFile()) {
         throw new NotFoundException('Song file not found.');
       }
+      assertMusicDirCurrent(handle);
       return { fd, size: stats.size };
     } catch (error) {
       try {
@@ -120,6 +135,8 @@ export class SongLocalStreamService {
       }
       if (error instanceof NotFoundException) throw error;
       throw new NotFoundException('Song file not found.');
+    } finally {
+      closeValidatedMusicDir(handle);
     }
   }
 

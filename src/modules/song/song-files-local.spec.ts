@@ -9,15 +9,18 @@ import { SongFilesService } from './song-files.service';
 describe('SongFilesService local storage save', () => {
   const osActual = jest.requireActual('os') as typeof os;
   let home: string;
+  let outside: string;
 
   beforeEach(() => {
     home = mkdtempSync(path.join(os.tmpdir(), 'sonic-files-home-'));
+    outside = mkdtempSync(path.join(os.tmpdir(), 'sonic-files-outside-'));
     jest.spyOn(osActual, 'homedir').mockReturnValue(home);
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
     rmSync(home, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
   });
 
   function createLocalService() {
@@ -107,6 +110,19 @@ describe('SongFilesService local storage save', () => {
     expect(execPromise).not.toHaveBeenCalled();
     expect(r2Service.uploadFileBuffer).not.toHaveBeenCalled();
     expect(fs.existsSync(path.join(home, 'songs'))).toBe(false);
+  });
+
+  it('fails without writing outside when ~/songs is a symlink', async () => {
+    fs.symlinkSync(outside, path.join(home, 'songs'));
+    const { service, r2Service } = createLocalService();
+    mockDownloadPipeline(service);
+
+    await expect(service.downloadAudio('vid123')).rejects.toThrow(
+      /Failed to process audio/,
+    );
+    expect(r2Service.uploadFileBuffer).not.toHaveBeenCalled();
+    expect(fs.readdirSync(outside)).toEqual([]);
+    expect(fs.existsSync(path.join(home, 'songs', 'vid123.m4a'))).toBe(false);
   });
 
   it('cleans up temp files after a local save failure', async () => {

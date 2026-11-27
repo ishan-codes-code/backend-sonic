@@ -1,4 +1,11 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import {
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type { Response } from 'express';
@@ -198,6 +205,32 @@ describe('SetupController local storage mode', () => {
     expect(() =>
       readFileSync(join(directory, 'config.json'), 'utf8'),
     ).toThrow();
+  });
+
+  it('fails a local save clearly when ~/songs is a symlink', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'sonic-setup-outside-'));
+    try {
+      symlinkSync(outside, join(home, 'songs'));
+
+      await expect(
+        controller.saveConfig(
+          token,
+          {
+            STORAGE_MODE: 'local',
+            YOUTUBE_API_KEY: 'youtube-key',
+            LASTFM_API_KEY: 'lastfm-key',
+          },
+          mockResponse(),
+        ),
+      ).rejects.toMatchObject({ status: 400 });
+
+      expect(() =>
+        readFileSync(join(directory, 'config.json'), 'utf8'),
+      ).toThrow();
+      expect(readdirSync(outside)).toEqual([]);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 
   it('keeps r2 defaults: no secret generation and unchanged requirements', async () => {
