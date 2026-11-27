@@ -3,7 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { SkipThrottle } from '@nestjs/throttler';
 import { sql, type SQL } from 'drizzle-orm';
 import { DRIZZLE_PROVIDER } from '../../infrastructure/database/database.constants';
-import { isSetupRequired } from '../../infrastructure/config/setup-requirements';
+import {
+  isSetupRequired,
+  STORAGE_MODES,
+} from '../../infrastructure/config/setup-requirements';
 import {
   API_VERSION,
   getPackageVersion,
@@ -29,6 +32,7 @@ export class HealthController {
     const databaseUrl = this.configService.get<string>('database.url');
     const setupRequired = isSetupRequired({
       DATABASE_URL: databaseUrl,
+      STORAGE_MODE: this.configService.get<string>('STORAGE_MODE'),
       R2_ACCOUNT_ID: this.configService.get<string>('R2_ACCOUNT_ID'),
       CLOUDFLARE_ACCOUNT_ID: this.configService.get<string>(
         'CLOUDFLARE_ACCOUNT_ID',
@@ -68,6 +72,13 @@ export class HealthController {
       }
     }
 
+    const storageMode = this.configService.get<string>('STORAGE_MODE');
+    const hasR2Credentials =
+      this.configService.get<string>('r2.accountId') &&
+      this.configService.get<string>('r2.accessKey') &&
+      this.configService.get<string>('r2.secretKey') &&
+      this.configService.get<string>('r2.bucket');
+
     return {
       app: 'sonic-backend',
       version: getPackageVersion(),
@@ -77,12 +88,14 @@ export class HealthController {
       db,
       features: {
         storage:
-          this.configService.get<string>('r2.accountId') &&
-          this.configService.get<string>('r2.accessKey') &&
-          this.configService.get<string>('r2.secretKey') &&
-          this.configService.get<string>('r2.bucket')
-            ? 'r2'
-            : 'none',
+          storageMode === 'local'
+            ? 'local'
+            : hasR2Credentials
+              ? 'r2'
+              : 'none',
+        // Storage modes this backend supports. Older backends omit this
+        // field, so the app must treat a missing field as "r2 only".
+        storageModes: [...STORAGE_MODES],
       },
     };
   }

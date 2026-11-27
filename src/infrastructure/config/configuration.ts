@@ -14,6 +14,12 @@ export default () => {
       secretKey: runtime.R2_SECRET_KEY,
       bucket: runtime.R2_BUCKET,
     },
+    storage: {
+      // Effective mode shared by the API and worker. Missing, blank, or
+      // invalid values behave as "r2"; an invalid value additionally keeps
+      // setup required (see setup-requirements) until it is fixed.
+      mode: runtime.STORAGE_MODE === 'local' ? 'local' : 'r2',
+    },
     lastfm: {
       apiKey: runtime.LASTFM_API_KEY,
     },

@@ -9,17 +9,41 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import type { Request } from 'express';
 import { GetCurrentUser } from '../../infrastructure/common/decorators/get-current-user.decorator';
 import { JwtAuthGuard } from '../../infrastructure/common/guards/jwt-auth.guard';
+import { getLocalStreamBaseUrl } from '../../infrastructure/storage/stream-base';
 import { CreatePlaylistDto, UpdatePlaylistDto } from './dto/createPlaylist.dto';
 import { PlaylistService } from './playlist.service';
 import { AddSongToPlaylistDto } from './dto/addSongToPlaylist.dto';
 
 @Controller('playlist')
 export class PlaylistController {
-  constructor(private readonly playlistService: PlaylistService) {}
+  constructor(
+    private readonly playlistService: PlaylistService,
+    private readonly configService: ConfigService,
+  ) {}
+
+  /**
+   * Per-request API base for local-mode stream URLs. Derived only in local
+   * mode so r2 responses never depend on request headers.
+   */
+  private getApiBaseUrl(req: Request): string | undefined {
+    if (this.configService.get<string>('STORAGE_MODE') !== 'local') {
+      return undefined;
+    }
+    try {
+      return getLocalStreamBaseUrl(req);
+    } catch {
+      throw new BadRequestException(
+        'Cannot determine the stream URL from this request.',
+      );
+    }
+  }
 
   @Post('create')
   @UseGuards(JwtAuthGuard)
@@ -45,11 +69,13 @@ export class PlaylistController {
     @GetCurrentUser() data,
     @Param('id', ParseUUIDPipe) id: string,
     @Headers('x-device-id') deviceId: string = 'default-session',
+    @Req() req: Request,
   ) {
     return await this.playlistService.getPlaylistWithSongs(
       data.id,
       id,
       deviceId,
+      this.getApiBaseUrl(req),
     );
   }
 

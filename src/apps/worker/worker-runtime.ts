@@ -17,6 +17,24 @@ export function isWorkerConfigured(config: RuntimeConfig): boolean {
   return Boolean(config.DATABASE_URL && config.WORKER_SECRET);
 }
 
+/**
+ * True when a config reload changed any key the worker initializes from.
+ * Only WORKER_SECRET is hot-reloaded; every other change (including
+ * STORAGE_MODE, so the worker picks up the saved mode after setup) requires
+ * a restart under the supervisor.
+ */
+export function hasRestartRequiredChanges(
+  previous: RuntimeConfig,
+  current: RuntimeConfig,
+): boolean {
+  const keys = new Set([...Object.keys(previous), ...Object.keys(current)]);
+  for (const key of keys) {
+    if (key === 'WORKER_SECRET') continue;
+    if (previous[key] !== current[key]) return true;
+  }
+  return false;
+}
+
 export async function isDatabaseAvailable(
   config: RuntimeConfig,
   timeoutMs = 3000,

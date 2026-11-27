@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Logger, Param, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, HttpCode, HttpStatus, Logger, Param, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { SongsService } from './songs.service';
 import { JwtAuthGuard } from '../../infrastructure/common/guards/jwt-auth.guard';
@@ -6,6 +6,7 @@ import { PlaySongDto, WorkerCallbackDto } from './dto/song.dto';
 import { ConfigService } from '@nestjs/config';
 import { PlaybackSessionService } from '../playback-session/playback-session.service';
 import { GetCurrentUser } from '../../infrastructure/common/decorators/get-current-user.decorator';
+import { getLocalStreamBaseUrl } from '../../infrastructure/storage/stream-base';
 
 @Controller('song')
 export class SongsController {
@@ -17,14 +18,32 @@ export class SongsController {
     private readonly playbackSessionService: PlaybackSessionService,
   ) { }
 
+  /**
+   * Per-request API base for local-mode stream URLs. Derived only in local
+   * mode so r2 responses never depend on request headers.
+   */
+  private getApiBaseUrl(req: Request): string | undefined {
+    if (this.configService.get<string>('STORAGE_MODE') !== 'local') {
+      return undefined;
+    }
+    try {
+      return getLocalStreamBaseUrl(req);
+    } catch {
+      throw new BadRequestException(
+        'Cannot determine the stream URL from this request.',
+      );
+    }
+  }
+
   @UseGuards(JwtAuthGuard)
   @Post('play')
   async playSongResolver(
     @GetCurrentUser() user: any,
     @Headers('x-device-id') deviceId: string = 'default-session',
     @Body() dto: PlaySongDto,
+    @Req() req: Request,
   ) {
-    const response = await this.songsService.play(dto);
+    const response = await this.songsService.play(dto, this.getApiBaseUrl(req));
     if (response.type === 'ready') {
       const playbackToken = await this.playbackSessionService.getOrCreatePlaybackToken(user.id, deviceId);
       return { ...response, playbackToken };
@@ -38,8 +57,9 @@ export class SongsController {
     @GetCurrentUser() user: any,
     @Headers('x-device-id') deviceId: string = 'default-session',
     @Param('jobId') youtubeId: string,
+    @Req() req: Request,
   ) {
-    const status = await this.songsService.getJobStatus(youtubeId);
+    const status = await this.songsService.getJobStatus(youtubeId, this.getApiBaseUrl(req));
     if (status.status === 'completed') {
       const playbackToken = await this.playbackSessionService.getOrCreatePlaybackToken(user.id, deviceId);
       return { ...status, playbackToken };

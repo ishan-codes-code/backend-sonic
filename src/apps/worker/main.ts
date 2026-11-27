@@ -13,6 +13,7 @@ import { WorkerHealthModule } from './worker-health.module';
 import { WorkerHealthService } from './worker-health.service';
 import {
   getWorkerRuntimeState,
+  hasRestartRequiredChanges,
   isDatabaseAvailable,
   waitForWorkerReadiness,
   WorkerRuntimeState,
@@ -53,15 +54,6 @@ function configureHttp(app: Awaited<ReturnType<typeof NestFactory.create>>) {
   });
   app.useGlobalFilters(new AllExceptionsFilter());
   return configService;
-}
-
-function hasRestartRequiredChanges(
-  previous: RuntimeConfig,
-  current: RuntimeConfig,
-): boolean {
-  return Object.keys(previous).some(
-    (key) => key !== 'WORKER_SECRET' && previous[key] !== current[key],
-  );
 }
 
 function monitorWorker(

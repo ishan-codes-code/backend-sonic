@@ -1,5 +1,10 @@
 import { HttpException, HttpStatus, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { R2Service } from '../../infrastructure/r2/r2.service';
+import {
+  localSongFileExists,
+  parseLocalR2Key,
+} from '../../infrastructure/storage/local-storage';
 import { SongCatalogService } from './song-catalog.service';
 import { Song } from './dto/play-response.dto';
 
@@ -23,8 +28,13 @@ export class SongStreamService implements OnModuleDestroy {
   constructor(
     private readonly songCatalogService: SongCatalogService,
     private readonly r2Service: R2Service,
+    private readonly configService: ConfigService,
   ) {
     this.pruneTimer = setInterval(() => this.pruneExpiredEntries(), CACHE_PRUNE_INTERVAL_MS);
+  }
+
+  private isLocalMode(): boolean {
+    return this.configService.get<string>('STORAGE_MODE') === 'local';
   }
 
   onModuleDestroy() {
@@ -49,7 +59,16 @@ export class SongStreamService implements OnModuleDestroy {
     return this.getCachedOrFreshUrl(song.id, song.r2Key);
   }
 
+  /**
+   * Best-effort stream availability probe used by job status and the worker
+   * dedup check. In local mode this checks the ~/songs file and makes no R2
+   * calls; the returned marker is truthiness-only and never served to clients
+   * (per-request absolute URLs come from toSongDto with the request base).
+   */
   async tryGetStreamUrl(r2Key: string): Promise<string | null> {
+    if (this.isLocalMode()) {
+      return localSongFileExists(r2Key) ? `local:${r2Key}` : null;
+    }
     try {
       return await this.r2Service.getSignedUrl(r2Key);
     } catch {
@@ -60,6 +79,16 @@ export class SongStreamService implements OnModuleDestroy {
   // ─── Internal helpers ───────────────────────────────────────────────────
 
   async getCachedOrFreshUrl(songId: string, r2Key: string): Promise<string> {
+    if (this.isLocalMode()) {
+      // Local URLs embed the per-request API base, so they must never be
+      // cached across requests. Return the relative stream path instead.
+      const youtubeId = parseLocalR2Key(r2Key);
+      if (!youtubeId || !localSongFileExists(r2Key)) {
+        throw new HttpException('Song file not found', HttpStatus.NOT_FOUND);
+      }
+      return `/stream/${youtubeId}`;
+    }
+
     const cached = this.urlCache.get(songId);
 
     if (cached && Date.now() < cached.expiresAt) {

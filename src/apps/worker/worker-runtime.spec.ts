@@ -1,4 +1,8 @@
-import { waitForWorkerReadiness, WorkerRuntimeState } from './worker-runtime';
+import {
+  hasRestartRequiredChanges,
+  waitForWorkerReadiness,
+  WorkerRuntimeState,
+} from './worker-runtime';
 
 const readyConfig = {
   DATABASE_URL: 'postgresql://db',
@@ -63,5 +67,37 @@ describe('worker readiness polling', () => {
 
     expect(result).toBe(readyConfig);
     expect(states).toEqual(['ok']);
+  });
+});
+
+describe('worker restart detection', () => {
+  const base = {
+    DATABASE_URL: 'postgresql://db',
+    WORKER_SECRET: 'worker-secret',
+    STORAGE_MODE: 'r2',
+  };
+
+  it('restarts when the saved storage mode changes', () => {
+    expect(
+      hasRestartRequiredChanges(base, { ...base, STORAGE_MODE: 'local' }),
+    ).toBe(true);
+  });
+
+  it('restarts when the storage mode first appears', () => {
+    const { STORAGE_MODE: _removed, ...withoutMode } = base;
+    expect(hasRestartRequiredChanges(withoutMode, base)).toBe(true);
+  });
+
+  it('does not restart when nothing changed', () => {
+    expect(hasRestartRequiredChanges(base, { ...base })).toBe(false);
+  });
+
+  it('does not restart for a worker secret rotation', () => {
+    expect(
+      hasRestartRequiredChanges(
+        base,
+        { ...base, WORKER_SECRET: 'rotated-secret' },
+      ),
+    ).toBe(false);
   });
 });

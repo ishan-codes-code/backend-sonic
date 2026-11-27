@@ -4,8 +4,10 @@ import { ConfigService } from '@nestjs/config';
 import { lastValueFrom } from 'rxjs';
 import { SongCatalogService } from './song-catalog.service';
 import { SongStreamService } from './song-stream.service';
-import { toSongDto } from './dto/play-response.dto';
+import { Song, toSongDto } from './dto/play-response.dto';
 import { WorkerCallbackDto } from './dto/song.dto';
+import { localSongFileExists } from '../../infrastructure/storage/local-storage';
+import { normalizeString } from '../../shared/utils/string.utils';
 
 export interface ProcessJobData {
   youtubeId: string;
@@ -183,12 +185,18 @@ export class SongJobsService {
     }
   }
 
+  private isLocalMode(): boolean {
+    return this.configService.get<string>('STORAGE_MODE') === 'local';
+  }
+
   /**
    * Returns the current status of a job.
    * 99% of calls are served from in-memory state (O(1)) with no outbound HTTP.
    * DB is only queried once the webhook signals job completion.
+   * `apiBaseUrl` is the per-request API base used for local-mode stream URLs;
+   * it is ignored in r2 mode.
    */
-  async getJobStatus(youtubeId: string) {
+  async getJobStatus(youtubeId: string, apiBaseUrl?: string) {
     const busyInfo = this.busyJobs.get(youtubeId);
     if (busyInfo) {
       if (busyInfo.expiresAt > Date.now()) {
@@ -305,6 +313,25 @@ export class SongJobsService {
     //       or this is an unknown ID. Check DB as the final source of truth. ──
     const song = await this.songCatalogService.findByYoutubeId(youtubeId);
     if (song?.r2Key) {
+      if (this.isLocalMode()) {
+        if (localSongFileExists(song.r2Key)) {
+          return { status: 'completed', song: toSongDto(song, apiBaseUrl) };
+        }
+        // The row exists but the file is gone: start a new download instead
+        // of returning a broken URL.
+        this.logger.log(
+          `Local file missing for youtubeId=${youtubeId}; starting a new download.`,
+        );
+        try {
+          await this.createProcessJob(this.rebuildJobData(song));
+        } catch (error) {
+          if (error instanceof HttpException) {
+            return { status: 'failed', song: null };
+          }
+          throw error;
+        }
+        return { status: 'active', song: null };
+      }
       const streamUrl = await this.songStreamService.tryGetStreamUrl(song.r2Key);
       if (streamUrl) {
         return { status: 'completed', song: toSongDto(song) };
@@ -312,6 +339,22 @@ export class SongJobsService {
     }
 
     return { status: 'not_found', song: null };
+  }
+
+  /** Rebuild worker job data from a stored song row for re-downloads. */
+  private rebuildJobData(song: Song): ProcessJobData {
+    const artistName = (song.artists ?? []).map((a) => a.name).join(', ');
+    return {
+      youtubeId: song.youtubeId,
+      trackName: song.trackName,
+      artistName,
+      normalizedTrackName: song.normalizedTrackName,
+      normalizedArtistName: normalizeString(artistName),
+      youtubeTitle: song.youtubeTitle ?? song.trackName,
+      image: song.image ?? null,
+      externalId: song.externalId ?? undefined,
+      lastfmId: song.lastfmId ?? undefined,
+    };
   }
 
   async checkFailedJobByNames(track: string, artist: string) {

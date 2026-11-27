@@ -8,8 +8,15 @@ import * as fs from 'fs-extra';
 import * as path from 'path';
 import * as os from 'os';
 import { spawn } from 'child_process';
+import { randomBytes } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { R2Service } from '../../infrastructure/r2/r2.service';
+import {
+  buildLocalR2Key,
+  ensureLocalMusicDir,
+  getLocalSongPath,
+  isValidYoutubeId,
+} from '../../infrastructure/storage/local-storage';
 
 const YTDlpWrap = require('yt-dlp-wrap').default;
 const ffmpegStatic = require('ffmpeg-static');
@@ -102,6 +109,16 @@ export class SongFilesService implements OnModuleInit {
 
   async downloadAudio(videoId: string) {
     const url = `https://www.youtube.com/watch?v=${videoId}`;
+    const localMode =
+      this.configService.get<string>('STORAGE_MODE') === 'local';
+
+    // Fail fast before downloading: the ID becomes a filename in ~/songs.
+    if (localMode && !isValidYoutubeId(videoId)) {
+      throw new HttpException(
+        'Failed to process audio: invalid video id.',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
 
     // const filename = `${videoId}-${Date.now()}.m4a`
     const filename = `${videoId}.m4a`;
@@ -152,6 +169,15 @@ export class SongFilesService implements OnModuleInit {
       // ✅ ADD THIS — move moov atom to front for instant seek
       await this.applyFaststart(finalPath, faststartPath);
 
+      if (localMode) {
+        return await this.saveToLocalMusicFolder(
+          videoId,
+          finalPath,
+          faststartPath,
+          duration,
+        );
+      }
+
 
       console.log(`Extraction complete. Uploading ${finalPath} to R2...`);
 
@@ -189,6 +215,53 @@ export class SongFilesService implements OnModuleInit {
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+  }
+
+  /**
+   * Persist a finished (duration-checked, faststart-processed) file to
+   * ~/songs: copy to a temporary file in the music folder, then atomically
+   * rename it to the final name. The song is marked ready (r2Key returned)
+   * only after the rename. Temporary files are cleaned up on failure; an
+   * existing final file is left untouched unless the rename replaces it.
+   * Makes no R2 calls.
+   */
+  private async saveToLocalMusicFolder(
+    videoId: string,
+    finalPath: string,
+    faststartPath: string,
+    duration: number,
+  ) {
+    const dir = ensureLocalMusicDir();
+    const finalLocalPath = getLocalSongPath(videoId);
+    const r2Key = buildLocalR2Key(videoId);
+    if (!finalLocalPath || !r2Key) {
+      throw new Error(`Invalid video id: ${videoId}`);
+    }
+
+    console.log(
+      `Extraction complete. Saving ${faststartPath} to ${finalLocalPath}...`,
+    );
+
+    const tmpPath = path.join(
+      dir,
+      `.${videoId}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`,
+    );
+    try {
+      await fs.copy(faststartPath, tmpPath);
+      await fs.rename(tmpPath, finalLocalPath);
+    } catch (err) {
+      await fs.remove(tmpPath).catch(() => { });
+      throw err;
+    } finally {
+      await fs.remove(finalPath).catch((err) => console.warn('Failed to cleanup temp file:', err));
+      await fs.remove(faststartPath).catch((err) => console.warn('Failed to cleanup faststart file:', err));
+    }
+
+    return {
+      success: true,
+      r2Key,
+      duration,
+    };
   }
 
   private extractDurationInSeconds(filePath: string): Promise<number> {

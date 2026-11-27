@@ -20,6 +20,7 @@ import { stripTrailingSlash } from './setup-requirements';
 const DEFAULTS: Record<string, string | undefined> = {
   PORT: '3000',
   DATABASE_URL: undefined,
+  STORAGE_MODE: undefined,
   JWT_ACCESS_SECRET: undefined,
   JWT_REFRESH_SECRET: undefined,
   JWT_ACCESS_EXPIRES_IN: '15m',
