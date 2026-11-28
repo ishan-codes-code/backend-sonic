@@ -136,7 +136,7 @@ fi
 
 API_READY=0
 for _ in {1..20}; do
-  health_body="$(curl -fsS --max-time 1 http://127.0.0.1:3000/health 2>/dev/null || true)"
+  health_body="$(curl -fsS --max-time 8 http://127.0.0.1:3000/health 2>/dev/null || true)"
   if [[ "$health_body" == *'"app":"sonic-backend"'* ]]; then
     API_READY=1
     break

@@ -183,4 +183,4 @@ reported separately from setup completeness), the effective storage backend
 detects local-storage support through `features.storageModes` and must reject
 backends where the field is missing (older backends predate local mode) when
 the user selects local storage. The database probe runs `select 1` with a
-two-second timeout. The response contains no secrets, URLs, or keys.
+six-second timeout. The response contains no secrets, URLs, or keys.

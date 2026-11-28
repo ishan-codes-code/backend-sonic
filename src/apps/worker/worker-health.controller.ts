@@ -9,6 +9,12 @@ import {
 import { isDatabaseAvailable } from './worker-runtime';
 import { WorkerHealthService } from './worker-health.service';
 
+/**
+ * Database probe budget, matching the API health check. Must stay below
+ * 8000ms: the app's setup polling gives up on each attempt after 8s.
+ */
+export const WORKER_DATABASE_HEALTH_TIMEOUT_MS = 6000;
+
 @Controller()
 export class WorkerHealthController {
   constructor(private readonly healthService: WorkerHealthService) {}
@@ -20,7 +26,7 @@ export class WorkerHealthController {
     const state = this.healthService.getState();
     const databaseAvailable = setupRequired
       ? false
-      : await isDatabaseAvailable(config, 2000);
+      : await isDatabaseAvailable(config, WORKER_DATABASE_HEALTH_TIMEOUT_MS);
 
     const hasR2Credentials =
       (config.R2_ACCOUNT_ID || config.CLOUDFLARE_ACCOUNT_ID) &&
