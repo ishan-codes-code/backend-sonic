@@ -5,8 +5,10 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { CreatePlaylistDto, UpdatePlaylistDto } from './dto/createPlaylist.dto';
 import { DRIZZLE_PROVIDER } from '../../infrastructure/database/database.module';
 import { NeonHttpDatabase } from 'drizzle-orm/neon-http';
@@ -19,11 +21,18 @@ import { PlaylistRepository } from './playlist.repository';
 import { getTableColumns } from 'drizzle-orm';
 import { toSongDto } from '../song/dto/play-response.dto';
 import { PlaybackSessionService } from '../playback-session/playback-session.service';
+import {
+  ProcessJobData,
+  SongJobsService,
+} from '../song/song-jobs.service';
+import { localSongFileExists } from '../../infrastructure/storage/local-storage';
+import { normalizeString } from '../../shared/utils/string.utils';
 
 const MAX_PLAYLIST_CACHE_SIZE = 1000; // Strictly bound cache to 1000 active playlists in memory
 
 @Injectable()
 export class PlaylistService {
+  private readonly logger = new Logger(PlaylistService.name);
   private readonly playlistCache = new Map<string, any>();
 
   constructor(
@@ -31,7 +40,13 @@ export class PlaylistService {
     private readonly db: NeonHttpDatabase<typeof schema>,
     private readonly playlistRepository: PlaylistRepository,
     private readonly playbackSessionService: PlaybackSessionService,
+    private readonly songJobsService: SongJobsService,
+    private readonly configService: ConfigService,
   ) {}
+
+  private isLocalMode(): boolean {
+    return this.configService.get<string>('STORAGE_MODE') === 'local';
+  }
 
   async addPlaylist(userId: string, dto: CreatePlaylistDto) {
     if (dto.name.trim().toLowerCase() === 'favorites') {
@@ -144,10 +159,17 @@ export class PlaylistService {
     }
   }
 
+  /**
+   * Fetch a playlist with its tracks. The cache stores song metadata only;
+   * stream URLs are built per request from `apiBaseUrl` (local mode) so one
+   * client's address is never served to another. `apiBaseUrl` is ignored in
+   * r2 mode.
+   */
   async getPlaylistWithSongs(
     userId: string,
     playlistId: string,
     deviceId: string,
+    apiBaseUrl?: string,
   ) {
     try {
       const cached = this.playlistCache.get(playlistId);
@@ -212,14 +234,13 @@ export class PlaylistService {
             name: playlist.user.name,
             email: playlist.user.email,
           },
-          tracks: playlist.songs.map((ps) => {
+          entries: playlist.songs.map((ps) => {
             const song = ps.song as any;
-            const songWithArtists = {
-              ...song,
-              artists: song.artists?.map((sa: any) => sa.artist) || [],
-            };
             return {
-              ...toSongDto(songWithArtists),
+              song: {
+                ...song,
+                artists: song.artists?.map((sa: any) => sa.artist) || [],
+              },
               position: ps.position,
             };
           }),
@@ -236,14 +257,19 @@ export class PlaylistService {
         this.playlistCache.set(playlistId, playlistData);
       }
 
+      const tracks = await this.buildTracks(playlistData.entries, apiBaseUrl);
+
       const playbackToken =
         await this.playbackSessionService.getOrCreatePlaybackToken(
           userId,
           deviceId,
         );
 
+      const playlistFields = { ...playlistData };
+      delete playlistFields.entries;
       return {
-        ...playlistData,
+        ...playlistFields,
+        tracks,
         playbackToken,
       };
     } catch (error: any) {
@@ -261,6 +287,65 @@ export class PlaylistService {
           throw new InternalServerErrorException('Failed to get playlist');
       }
     }
+  }
+
+  /**
+   * Build per-request track DTOs. In local mode a track whose ~/songs file is
+   * missing starts a new download and is returned with an empty streamUrl
+   * plus the jobId to poll, instead of a broken URL.
+   */
+  private async buildTracks(
+    entries: Array<{ song: any; position: number }>,
+    apiBaseUrl?: string,
+  ) {
+    const local = this.isLocalMode();
+    const tracks: any[] = [];
+    for (const entry of entries) {
+      if (local && !localSongFileExists(entry.song.r2Key)) {
+        this.logger.log(
+          `Local file missing for youtubeId=${entry.song.youtubeId}; starting a new download.`,
+        );
+        try {
+          await this.songJobsService.createProcessJob(
+            this.rebuildJobData(entry.song),
+          );
+        } catch (error) {
+          this.logger.warn(
+            `Re-download trigger failed for youtubeId=${entry.song.youtubeId}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+        tracks.push({
+          ...toSongDto(entry.song, apiBaseUrl),
+          streamUrl: '',
+          jobId: entry.song.youtubeId,
+          position: entry.position,
+        });
+      } else {
+        tracks.push({
+          ...toSongDto(entry.song, apiBaseUrl),
+          position: entry.position,
+        });
+      }
+    }
+    return tracks;
+  }
+
+  /** Rebuild worker job data from a stored song row for re-downloads. */
+  private rebuildJobData(song: any): ProcessJobData {
+    const artistName = (song.artists ?? []).map((a: any) => a.name).join(', ');
+    return {
+      youtubeId: song.youtubeId,
+      trackName: song.trackName,
+      artistName,
+      normalizedTrackName: song.normalizedTrackName,
+      normalizedArtistName: normalizeString(artistName),
+      youtubeTitle: song.youtubeTitle ?? song.trackName,
+      image: song.image ?? null,
+      externalId: song.externalId ?? undefined,
+      lastfmId: song.lastfmId ?? undefined,
+    };
   }
 
   async addSongToPlaylist(userId: string, dto: AddSongToPlaylistDto) {

@@ -15,6 +15,35 @@ export interface QueueItem {
   startedAt?: number;
 }
 
+/**
+ * True when the error is a unique violation, whether raised directly by the
+ * driver or wrapped (drizzle-orm raises DrizzleQueryError with the driver
+ * error in `cause`, so checking only the outer message misses it). Walks
+ * the cause chain for code 23505 or the Postgres duplicate-key message.
+ * Never throws; anything else is not a unique violation.
+ */
+export function isUniqueViolation(error: unknown): boolean {
+  let current: unknown = error;
+  const seen = new Set<unknown>();
+  while (current && typeof current === 'object' && !seen.has(current)) {
+    seen.add(current);
+    const record = current as {
+      code?: unknown;
+      message?: unknown;
+      cause?: unknown;
+    };
+    if (record.code === '23505') return true;
+    if (
+      typeof record.message === 'string' &&
+      record.message.includes('duplicate key value')
+    ) {
+      return true;
+    }
+    current = record.cause;
+  }
+  return false;
+}
+
 @Injectable()
 export class SongProcessorService {
   private readonly logger = new Logger(SongProcessorService.name);
@@ -235,28 +264,39 @@ export class SongProcessorService {
     this.logger.log(`Downloading audio for youtubeId=${youtubeId}`);
     const result = await this.songFilesService.downloadAudio(youtubeId);
 
-    // Step 3: Create or update DB record
-    try {
-      song = await this.songCatalogService.create({
+    // Step 3: Create or update DB record. When the row already exists (e.g.
+    // its content went missing and is being re-downloaded), refresh only
+    // r2Key/duration and keep its metadata and artist links.
+    if (song) {
+      song = await this.songCatalogService.updateR2Key(
         youtubeId,
-        trackName: data.trackName,
-        normalizedTrackName: data.normalizedTrackName,
-        youtubeTitle: data.youtubeTitle,
-        image: data.image ?? null,
-        externalId: data.externalId ?? null,
-        lastfmId: data.lastfmId ?? null,
-        r2Key: result.r2Key,
-        duration: result.duration,
-      });
-    } catch (err: any) {
-      if (err.message?.includes('duplicate key value')) {
-        song = await this.songCatalogService.updateR2Key(
+        result.r2Key,
+        result.duration,
+      );
+    } else {
+      try {
+        song = await this.songCatalogService.create({
           youtubeId,
-          result.r2Key,
-          result.duration,
-        );
-      } else {
-        throw err;
+          trackName: data.trackName,
+          normalizedTrackName: data.normalizedTrackName,
+          youtubeTitle: data.youtubeTitle,
+          image: data.image ?? null,
+          externalId: data.externalId ?? null,
+          lastfmId: data.lastfmId ?? null,
+          r2Key: result.r2Key,
+          duration: result.duration,
+        });
+      } catch (err: any) {
+        if (isUniqueViolation(err)) {
+          // Lost a concurrent insert race: the row now exists.
+          song = await this.songCatalogService.updateR2Key(
+            youtubeId,
+            result.r2Key,
+            result.duration,
+          );
+        } else {
+          throw err;
+        }
       }
     }
 

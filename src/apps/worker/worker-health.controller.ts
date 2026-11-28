@@ -1,5 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { loadRuntimeConfig } from '../../infrastructure/config/runtime-config';
+import { STORAGE_MODES } from '../../infrastructure/config/setup-requirements';
 import {
   API_VERSION,
   getPackageVersion,
@@ -7,6 +8,12 @@ import {
 } from '../../shared/constants';
 import { isDatabaseAvailable } from './worker-runtime';
 import { WorkerHealthService } from './worker-health.service';
+
+/**
+ * Database probe budget, matching the API health check. Must stay below
+ * 8000ms: the app's setup polling gives up on each attempt after 8s.
+ */
+export const WORKER_DATABASE_HEALTH_TIMEOUT_MS = 6000;
 
 @Controller()
 export class WorkerHealthController {
@@ -19,7 +26,13 @@ export class WorkerHealthController {
     const state = this.healthService.getState();
     const databaseAvailable = setupRequired
       ? false
-      : await isDatabaseAvailable(config, 2000);
+      : await isDatabaseAvailable(config, WORKER_DATABASE_HEALTH_TIMEOUT_MS);
+
+    const hasR2Credentials =
+      (config.R2_ACCOUNT_ID || config.CLOUDFLARE_ACCOUNT_ID) &&
+      config.R2_ACCESS_KEY &&
+      config.R2_SECRET_KEY &&
+      config.R2_BUCKET;
 
     return {
       app: 'sonic-backend',
@@ -30,12 +43,14 @@ export class WorkerHealthController {
       db: setupRequired ? 'unconfigured' : databaseAvailable ? 'ok' : 'down',
       features: {
         storage:
-          (config.R2_ACCOUNT_ID || config.CLOUDFLARE_ACCOUNT_ID) &&
-          config.R2_ACCESS_KEY &&
-          config.R2_SECRET_KEY &&
-          config.R2_BUCKET
-            ? 'r2'
-            : 'none',
+          config.STORAGE_MODE === 'local'
+            ? 'local'
+            : hasR2Credentials
+              ? 'r2'
+              : 'none',
+        // Storage modes this backend supports. Older backends omit this
+        // field, so the app must treat a missing field as "r2 only".
+        storageModes: [...STORAGE_MODES],
       },
       state,
     };

@@ -111,6 +111,23 @@ describe('runtime config persistence', () => {
       expect(reloadRuntimeConfig().WORKER_STREAM_URL).toBeUndefined();
     });
 
+    it('stores the storage mode with environment overrides winning', () => {
+      const previousMode = process.env.STORAGE_MODE;
+      delete process.env.STORAGE_MODE;
+      try {
+        expect(reloadRuntimeConfig().STORAGE_MODE).toBeUndefined();
+        saveRuntimeConfig({ STORAGE_MODE: 'local' });
+        expect(reloadRuntimeConfig().STORAGE_MODE).toBe('local');
+
+        process.env.STORAGE_MODE = 'r2';
+        expect(reloadRuntimeConfig().STORAGE_MODE).toBe('r2');
+      } finally {
+        if (previousMode === undefined) delete process.env.STORAGE_MODE;
+        else process.env.STORAGE_MODE = previousMode;
+        reloadRuntimeConfig({ readOnly: true });
+      }
+    });
+
     it('strips trailing slashes from the stream URL', () => {
       saveRuntimeConfig({
         WORKER_STREAM_URL: 'https://worker.example.com/',

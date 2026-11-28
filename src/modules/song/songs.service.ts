@@ -1,14 +1,16 @@
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PlaySongDto } from './dto/song.dto';
 import { PlayResponseDto, ResolvedPlayableSong, Song, toSongDto } from './dto/play-response.dto';
 import { SongCatalogService } from './song-catalog.service';
-import { SongJobsService } from './song-jobs.service';
+import { ProcessJobData, SongJobsService } from './song-jobs.service';
 import { WorkerCallbackDto } from './dto/song.dto';
 import { SongStreamService } from './song-stream.service';
 import { YoutubeResolverService } from '../youtube/youtube-resolver.service';
 import { normalizeString } from '../../shared/utils/string.utils';
 import { ArtistService } from './artist.service';
 import { splitArtists } from '../../shared/utils/artist.utils';
+import { localSongFileExists } from '../../infrastructure/storage/local-storage';
 
 @Injectable()
 export class SongsService {
@@ -20,6 +22,7 @@ export class SongsService {
     private readonly songStreamService: SongStreamService,
     private readonly youtubeResolverService: YoutubeResolverService,
     private readonly artistService: ArtistService,
+    private readonly configService: ConfigService,
   ) { }
 
 
@@ -28,7 +31,11 @@ export class SongsService {
     return { url: streamUrl };
   }
 
-  async play(dto: PlaySongDto): Promise<PlayResponseDto> {
+  /**
+   * Resolve a play request. `apiBaseUrl` is the per-request API base used for
+   * local-mode stream URLs; it is ignored in r2 mode.
+   */
+  async play(dto: PlaySongDto, apiBaseUrl?: string): Promise<PlayResponseDto> {
     const resolved = await this.resolvePlayableSong(dto);
 
     // ── CASE 1: Direct by songId ─────────────────────────────────────────────
@@ -37,13 +44,13 @@ export class SongsService {
       if (!song) {
         throw new HttpException('Song not found', HttpStatus.NOT_FOUND);
       }
-      return { type: 'ready', song: toSongDto(song) };
+      return this.toReadyOrReDownload(song, apiBaseUrl);
     }
 
     // ── CASE 2: Found in DB ──────────────────────────────────────────────────
     if (resolved.type === 'existing') {
       const song = resolved.song;
-      return { type: 'ready', song: toSongDto(song) };
+      return this.toReadyOrReDownload(song, apiBaseUrl);
     }
 
     // ── CASE 3: Newly resolved from YouTube ─────────────────────────────────
@@ -55,12 +62,52 @@ export class SongsService {
     throw new Error('Invalid play state');
   }
 
-  async getJobStatus(jobId: string) {
-    return this.songJobsService.getJobStatus(jobId);
+  async getJobStatus(jobId: string, apiBaseUrl?: string) {
+    return this.songJobsService.getJobStatus(jobId, apiBaseUrl);
   }
 
   handleWorkerCallback(dto: WorkerCallbackDto): void {
     this.songJobsService.handleWorkerCallback(dto);
+  }
+
+  private isLocalMode(): boolean {
+    return this.configService.get<string>('STORAGE_MODE') === 'local';
+  }
+
+  /**
+   * In local mode a database row alone never means ready: when the ~/songs
+   * file is missing, start a new download instead of returning a broken URL.
+   */
+  private async toReadyOrReDownload(
+    song: Song,
+    apiBaseUrl?: string,
+  ): Promise<PlayResponseDto> {
+    if (this.isLocalMode() && !localSongFileExists(song.r2Key)) {
+      this.logger.log(
+        `Local file missing for youtubeId=${song.youtubeId}; starting a new download.`,
+      );
+      const job = await this.songJobsService.createProcessJob(
+        this.rebuildJobData(song),
+      );
+      return { type: 'job', jobId: job.youtubeId };
+    }
+    return { type: 'ready', song: toSongDto(song, apiBaseUrl) };
+  }
+
+  /** Rebuild worker job data from a stored song row for re-downloads. */
+  private rebuildJobData(song: Song): ProcessJobData {
+    const artistName = (song.artists ?? []).map((a) => a.name).join(', ');
+    return {
+      youtubeId: song.youtubeId,
+      trackName: song.trackName,
+      artistName,
+      normalizedTrackName: song.normalizedTrackName,
+      normalizedArtistName: normalizeString(artistName),
+      youtubeTitle: song.youtubeTitle ?? song.trackName,
+      image: song.image ?? null,
+      externalId: song.externalId ?? undefined,
+      lastfmId: song.lastfmId ?? undefined,
+    };
   }
 
   // ─── Private helpers ─────────────────────────────────────────────────────
